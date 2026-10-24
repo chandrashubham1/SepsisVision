@@ -6,6 +6,13 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+# Load .env file if present (local development)
+try:
+    from dotenv import load_dotenv as _load_dotenv
+    _load_dotenv(override=False)   # don't override vars already set in the shell
+except ImportError:
+    pass  # python-dotenv not installed — rely on shell environment
+
 APP_TITLE       = "SepsisAI BEI API"
 APP_VERSION     = "2.0.0"
 APP_DESCRIPTION = (

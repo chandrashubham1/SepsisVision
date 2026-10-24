@@ -27,3 +27,4 @@ pymupdf>=1.24.0              # PyMuPDF — provides fitz
 
 # Utilities
 tqdm>=4.66.0
+python-dotenv>=1.0.0
