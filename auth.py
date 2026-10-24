@@ -59,14 +59,31 @@ def get_current_hospital(
     FastAPI dependency — validates X-API-Key header.
     Returns the Hospital ORM object on success; raises HTTP 401 on failure.
     Inject as:  hospital = Depends(get_current_hospital)
+
+    DEV bypass: if DEV_API_KEY is set in config and the submitted key matches,
+    a mock Hospital object is returned without touching the database.
     """
+    # ── Dev bypass (no DB required) ───────────────────────────────────────────
+    if config.DEV_API_KEY and api_key == config.DEV_API_KEY:
+        from types import SimpleNamespace
+        return SimpleNamespace(
+            id=0,
+            name="Dev / Local",
+            tier="research",
+            active=True,
+            api_key_hash="dev",
+        )
+
     from db_models import Hospital
     hsh = hash_api_key(api_key)
-    hospital = (
-        db.query(Hospital)
-        .filter(Hospital.api_key_hash == hsh, Hospital.active == True)
-        .first()
-    )
+    try:
+        hospital = (
+            db.query(Hospital)
+            .filter(Hospital.api_key_hash == hsh, Hospital.active == True)
+            .first()
+        )
+    except Exception:
+        hospital = None
     if not hospital:
         logger.warning("API request with invalid or inactive key (prefix=%s)", api_key[:12])
         raise HTTPException(

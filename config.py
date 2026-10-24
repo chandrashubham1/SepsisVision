@@ -27,6 +27,11 @@ DB_ECHO = os.getenv("DB_ECHO", "false").lower() == "true"
 # Generate a strong random value: python -c "import secrets; print(secrets.token_hex(32))"
 ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "")
 
+# ── Dev bypass key (LOCAL USE ONLY — never set in production) ─────────────────
+# Set DEV_API_KEY in .env to skip database auth during local development.
+# Any request presenting this exact key is accepted without a DB lookup.
+DEV_API_KEY: str = os.getenv("DEV_API_KEY", "")
+
 # ── ChromaDB / RAG ────────────────────────────────────────────────────────────
 CHROMA_PATH     = os.getenv("CHROMA_PATH", "/data/chroma_db")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "sepsisai_full_collection_2026")
