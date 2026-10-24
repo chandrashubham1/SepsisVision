@@ -72,6 +72,284 @@ _MARKER_CLINICAL_CONTEXT: Dict[str, str] = {
 }
 
 
+# ── Biological system groups ──────────────────────────────────────────────────
+
+SYSTEM_GROUPS: Dict[str, str] = {
+    "D-dimer":    "COAGULATION",
+    "Platelets":  "COAGULATION",
+    "CRP":        "INFLAMMATION",
+    "IL-6":       "INFLAMMATION",
+    "IL-8":       "INFLAMMATION",
+    "IL-10":      "INFLAMMATION",
+    "PTX3":       "INFLAMMATION",
+    "TNF-alpha":  "INFLAMMATION",
+    "IL-18":      "INFLAMMATION",
+    "sIL-1R2":    "INFLAMMATION",
+    "IL-1ra":     "INFLAMMATION",
+    "Creatinine": "ORGAN FUNCTION",
+    "Urea":       "ORGAN FUNCTION",
+    "SOFA":       "ORGAN FUNCTION",
+    "MAP":        "HAEMODYNAMICS",
+    "Lactate":    "HAEMODYNAMICS",
+    "PaO2_FiO2":  "OXYGENATION",
+    "GCS":        "NEUROLOGICAL",
+}
+
+_SYSTEM_ORDER = [
+    "HAEMODYNAMICS", "COAGULATION", "ORGAN FUNCTION",
+    "INFLAMMATION", "OXYGENATION", "NEUROLOGICAL",
+]
+
+# ── Clinical reference ranges ─────────────────────────────────────────────────
+# (lower_normal, upper_normal, unit, direction)
+# direction: "high_bad" = elevated is pathological; "low_bad" = low is pathological
+
+_CLINICAL_REFS: Dict[str, tuple] = {
+    "Lactate":    (0.5,   2.0,   "mmol/L",  "high_bad"),
+    "SOFA":       (0,     2,     "points",  "high_bad"),
+    "PTX3":       (0,     2.0,   "ng/mL",   "high_bad"),
+    "D-dimer":    (0,     500,   "ng/mL",   "high_bad"),
+    "IL-10":      (0,     9.1,   "pg/mL",   "high_bad"),
+    "Creatinine": (44,    110,   "μmol/L",  "high_bad"),
+    "Urea":       (2.5,   7.1,   "mmol/L",  "high_bad"),
+    "Platelets":  (150,   400,   "×10⁹/L",  "low_bad"),
+    "MAP":        (70,    105,   "mmHg",    "low_bad"),
+    "GCS":        (15,    15,    "points",  "low_bad"),
+    "CRP":        (0,     5,     "mg/L",    "high_bad"),
+    "PaO2_FiO2":  (300,   500,   "ratio",   "low_bad"),
+    "IL-8":       (0,     16,    "pg/mL",   "high_bad"),
+    "IL-6":       (0,     7,     "pg/mL",   "high_bad"),
+    "sIL-1R2":    (0,     2000,  "pg/mL",   "high_bad"),
+    "IL-18":      (0,     200,   "pg/mL",   "high_bad"),
+    "IL-1ra":     (0,     200,   "pg/mL",   "high_bad"),
+    "TNF-alpha":  (0,     8.1,   "pg/mL",   "high_bad"),
+}
+
+
+def _ref_deviation_label(marker: str, raw_val) -> str:
+    """Return a short label showing deviation from clinical reference range."""
+    if raw_val is None:
+        return ""
+    ref = _CLINICAL_REFS.get(marker)
+    if ref is None:
+        return ""
+    lo, hi, unit, direction = ref
+    val = float(raw_val)
+    if direction == "high_bad":
+        if val > hi and hi > 0:
+            fold = val / hi
+            if fold >= 2.0:
+                return f"{fold:.1f}× ULN"
+            pct = (val - hi) / hi * 100
+            return f"+{pct:.0f}% above ULN"
+        elif val < lo:
+            return f"below ref ({lo} {unit})"
+        return "within ref"
+    else:  # low_bad
+        if val < lo and lo > 0:
+            pct = (lo - val) / lo * 100
+            return f"{pct:.0f}% below LLN"
+        return "within ref" if val <= hi else f"above ref ({hi} {unit})"
+
+
+# ── Hard clinical rules: PASS / TRIGGERED / INDETERMINATE ─────────────────────
+
+def evaluate_hard_rules(raw: Dict[str, Any], ep: Dict[str, float]) -> List[dict]:
+    """
+    Evaluate the 5 hard clinical rules from patient biomarker values.
+    Mirrors the logic in treatment.py — deterministic, no API call.
+
+    Returns list of dicts: {rule_id, name, status, detail}
+    status ∈ {"PASS", "TRIGGERED", "INDETERMINATE"}
+    """
+    rules: List[dict] = []
+
+    # ── Rule 1 + 5: U:Cr ratio → catabolism vs AKI + protein target ─────────
+    urea      = float(raw.get("Urea", 0) or 0)
+    creat     = float(raw.get("Creatinine", 1) or 1)
+    creat_si  = creat / 1000.0          # μmol/L → mmol/L
+    uc_ratio  = round(urea / creat_si, 1) if creat_si > 0 else 0.0
+    catabolic = uc_ratio > 150
+
+    rules.append({
+        "rule_id": "R1",
+        "name":    "U:Cr Catabolism (not AKI)",
+        "status":  "TRIGGERED" if catabolic else "PASS",
+        "detail":  (
+            f"U:Cr={uc_ratio} >150 → CATABOLIC HYPERUREAEMIA. "
+            "Lead with proteolysis, not renal failure. "
+            "Do NOT frame as AKI-first."
+            if catabolic else
+            f"U:Cr={uc_ratio} — AKI-predominant pattern. Renal-first approach appropriate."
+        ),
+    })
+
+    # ── Rule 2: IL-10 energy → steroid contraindication ──────────────────────
+    il10_e  = ep.get("IL-10", 0.0)
+    steroids_ci = il10_e > 0.70
+    rules.append({
+        "rule_id": "R2",
+        "name":    "IL-10 / Steroid Contraindication",
+        "status":  "TRIGGERED" if steroids_ci else "PASS",
+        "detail":  (
+            f"IL-10 energy={il10_e:.4f} >0.70 → Corticosteroids CONTRAINDICATED. "
+            "Anti-inflammatory reserve intact; steroids increase secondary infection risk."
+            if steroids_ci else
+            f"IL-10 energy={il10_e:.4f} — Steroid candidacy: individual haemodynamic assessment required."
+        ),
+    })
+
+    # ── Rule 3: DIC — ISTH score required (D-dimer alone is insufficient) ────
+    ddimer = float(raw.get("D-dimer", 0) or 0)
+    plt    = float(raw.get("Platelets", 999) or 999)
+    if ddimer > 3000 and plt < 100:
+        r3_status = "TRIGGERED"
+        r3_detail = (
+            f"D-dimer={ddimer:.0f} ng/mL + Platelets={plt:.0f} ×10⁹/L — "
+            "Full ISTH DIC score ≥5 required. D-dimer alone does NOT establish DIC."
+        )
+    elif ddimer > 500:
+        r3_status = "INDETERMINATE"
+        r3_detail = (
+            f"D-dimer={ddimer:.0f} ng/mL (above 500 threshold) — "
+            "Obtain ISTH DIC score before diagnosing DIC."
+        )
+    else:
+        r3_status = "PASS"
+        r3_detail = f"D-dimer={ddimer:.0f} ng/mL — DIC threshold not reached on current data."
+    rules.append({
+        "rule_id": "R3",
+        "name":    "DIC — ISTH Score Required",
+        "status":  r3_status,
+        "detail":  r3_detail,
+    })
+
+    # ── Rule 4: CRRT indication per KDIGO (Urea alone is NOT sufficient) ─────
+    rules.append({
+        "rule_id": "R4",
+        "name":    "CRRT per KDIGO (not Urea target)",
+        "status":  "PASS",
+        "detail":  (
+            f"Urea={urea} mmol/L — CRRT requires KDIGO criteria: "
+            "refractory fluid overload, pH <7.15, K⁺ >6.5, uraemic complications, "
+            "or vasopressor-refractory instability. "
+            "Urea level alone is NOT an indication."
+        ),
+    })
+
+    # ── Rule 5: Protein target (driven by Rule 1 result) ─────────────────────
+    rules.append({
+        "rule_id": "R5",
+        "name":    "Protein Target (catabolic adjustment)",
+        "status":  "TRIGGERED" if catabolic else "PASS",
+        "detail":  (
+            f"U:Cr={uc_ratio} (catabolic) → Protein ≥1.5 g/kg/day (ESPEN 2019, Heyland 2011). "
+            "Do NOT restrict to 0.8–1.2 g/kg/day — protein restriction in catabolic sepsis "
+            "accelerates muscle wasting and INCREASES mortality."
+            if catabolic else
+            f"U:Cr={uc_ratio} — Standard protein 1.2–1.5 g/kg/day. Monitor renal tolerance."
+        ),
+    })
+
+    return rules
+
+
+# ── Phenotype classification: SRS1 (immunoparalysis) vs SRS2 (hyperinflammatory) ─
+
+def classify_phenotype(raw: Dict[str, Any], ep: Dict[str, float]) -> dict:
+    """
+    Classify sepsis immune phenotype from IL-10 energy, CRP, SOFA.
+
+    SRS2-like  = Hyperinflammatory:  high CRP, IL-10 not dominant, high SOFA
+    SRS1-like  = Immunoparalysis:    IL-10 energy dominant (>0.70), high SOFA
+    Mixed      = Both arms active simultaneously
+    Indeterminate = SOFA <6 (insufficient severity for confident classification)
+
+    Returns dict: {phenotype, subtype, confidence, evidence, clinical_implications}
+    """
+    il10_e   = ep.get("IL-10", 0.0)
+    il10_raw = float(raw.get("IL-10", 0) or 0)    # pg/mL — use RAW for phenotype
+    crp_val  = float(raw.get("CRP", 0) or 0)
+    sofa_val = float(raw.get("SOFA", 0) or 0)
+
+    # NOTE: phenotype classification uses RAW biomarker values (clinical thresholds).
+    # Rule R2 steroid contraindication uses IL-10 ENERGY — these are separate questions:
+    #   R2: "Is anti-inflammatory reserve working?" → IL-10 energy
+    #   Phenotype: "Which immune state?" → raw IL-10 concentration vs CRP
+
+    if sofa_val < 6:
+        return {
+            "phenotype":            "INDETERMINATE",
+            "subtype":              "—",
+            "confidence":           "LOW (SOFA <6)",
+            "evidence":             [f"SOFA={sofa_val:.0f} — insufficient severity for SRS phenotyping"],
+            "clinical_implications": ["Phenotype classification requires SOFA ≥6"],
+        }
+
+    # IMMUNOPARALYSIS: markedly elevated raw IL-10 (>50 pg/mL) — immune exhaustion signal
+    if il10_raw > 50 and sofa_val >= 6:
+        phenotype   = "IMMUNOPARALYSIS"
+        subtype     = "SRS1-like"
+        confidence  = "HIGH" if (il10_raw > 100 and crp_val < 100) else "MODERATE"
+        evidence    = [
+            f"IL-10={il10_raw:.1f} pg/mL (>50) — markedly elevated: immune exhaustion likely",
+            f"CRP={crp_val:.0f} mg/L (may be suppressed by IL-10 override)",
+            f"SOFA={sofa_val:.0f} — organ failure without proportionate inflammatory signal",
+        ]
+        implications = [
+            "⚠ Corticosteroids CONTRAINDICATED (Rule R2) — deepens immunosuppression",
+            "Risk: secondary bacterial/fungal infection, failure to clear primary source",
+            "Consider: IFN-γ or GM-CSF protocol if immunoparalysis confirmed on serial testing",
+        ]
+
+    # HYPERINFLAMMATORY: high CRP, IL-10 not compensating, severe SOFA
+    elif crp_val > 150 and il10_raw < 50 and sofa_val >= 6:
+        phenotype   = "HYPERINFLAMMATORY"
+        subtype     = "SRS2-like"
+        confidence  = "HIGH" if crp_val > 200 else "MODERATE"
+        evidence    = [
+            f"CRP={crp_val:.0f} mg/L (>150) — sustained high-grade acute-phase response",
+            f"IL-10={il10_raw:.1f} pg/mL (<50) — compensatory immunosuppression NOT dominant",
+            f"SOFA={sofa_val:.0f} — multi-organ dysfunction confirms systemic severity",
+        ]
+        implications = [
+            "Steroid candidacy: individual haemodynamic assessment (not automatically indicated)",
+            "Risk: cytokine storm, immunothrombosis, DIC propagation",
+            "Consider: tocilizumab / anakinra if inflammation escalating despite source control",
+        ]
+
+    elif sofa_val >= 6:
+        # Both CRP elevated AND IL-10 rising — transitional state
+        phenotype   = "MIXED / TRANSITIONAL"
+        subtype     = "SRS1–SRS2 overlap"
+        confidence  = "LOW"
+        evidence    = [
+            f"CRP={crp_val:.0f} mg/L + IL-10={il10_raw:.1f} pg/mL — "
+            "neither arm clearly dominant",
+            f"SOFA={sofa_val:.0f} — severity confirmed",
+            "Pattern: hyperinflammation with emerging compensatory immunosuppression",
+        ]
+        implications = [
+            "Serial IL-10 tracking critical — direction of drift determines therapy",
+            "Steroid candidacy: INDETERMINATE — monitor 12–24h trend before decision",
+            "Phenotype likely to declare within 24h — repeat BEI at next labs",
+        ]
+    else:
+        phenotype   = "INDETERMINATE"
+        subtype     = "—"
+        confidence  = "LOW"
+        evidence    = [f"SOFA={sofa_val:.0f}, CRP={crp_val:.0f}, IL-10={il10_raw:.1f} — pattern unclear"]
+        implications = ["Insufficient data for confident phenotype assignment"]
+
+    return {
+        "phenotype":            phenotype,
+        "subtype":              subtype,
+        "confidence":           confidence,
+        "evidence":             evidence,
+        "clinical_implications": implications,
+    }
+
+
 def build_xai_attribution(bei: dict, raw: Dict[str, Any]) -> dict:
     """
     Build structured per-marker xAI attribution from a BEI result.
@@ -154,6 +432,8 @@ def build_xai_attribution(bei: dict, raw: Dict[str, Any]) -> dict:
             "severity":        severity,
             "is_primary":      marker == tipping_m,
             "clinical_context": _MARKER_CLINICAL_CONTEXT.get(marker, ""),
+            "system_group":    SYSTEM_GROUPS.get(marker, "OTHER"),
+            "ref_deviation":   _ref_deviation_label(marker, raw_val),
         })
 
     # Sort: most negative TC first (worst drivers at top)
@@ -215,6 +495,10 @@ def build_xai_attribution(bei: dict, raw: Dict[str, Any]) -> dict:
     else:
         xai_summary = f"BEI={score:.4f} ({zone} zone). Insufficient marker data for attribution."
 
+    # ── Hard rules + phenotype (deterministic enrichment) ────────────────────
+    hard_rules = evaluate_hard_rules(raw, ep)
+    phenotype  = classify_phenotype(raw, ep)
+
     return {
         "module":             module,
         "bei_score":          score,
@@ -225,35 +509,108 @@ def build_xai_attribution(bei: dict, raw: Dict[str, Any]) -> dict:
         "marker_attributions": attributions,
         "xai_summary":        xai_summary,
         "n_markers":          len(attributions),
+        "hard_rules":         hard_rules,
+        "phenotype":          phenotype,
     }
 
 
-def format_xai_for_prompt(xai: dict, max_markers: int = 8) -> str:
+def format_xai_for_prompt(xai: dict, max_markers: int = 17) -> str:
     """
-    Compact string representation for injection into a Claude prompt.
-    Shows the xAI summary, prediction, and top N markers sorted by TC.
+    Clinical explainability block for display or prompt injection.
+    Sections:
+      1. Phenotype flag (SRS1/SRS2/Mixed)
+      2. Hard rules PASS/TRIGGERED/INDETERMINATE header
+      3. Per-marker attribution table grouped by biological system
+         — includes reference range deviation magnitude
     """
     lines = [
-        "═══ xAI ATTRIBUTION BLOCK ══════════════════════════════════",
-        f"BEI Score   : {xai['bei_score']:.4f}  Zone: {xai['bei_zone']}",
-        f"xAI Summary : {xai['xai_summary']}",
+        "═══ SepsisAI xAI EXPLAINABILITY REPORT ════════════════════════════════════",
+        f"  BEI Score : {xai['bei_score']:.4f}   Zone: {xai['bei_zone']}   Module {xai['module']}",
+        f"  Summary   : {xai['xai_summary']}",
         "",
-        f"PREDICTED OUTCOME: {xai['predicted_outcome']}",
-        "",
-        f"PER-MARKER ATTRIBUTION (worst drivers first, Module {xai['module']}):",
-        f"{'Marker':<14} {'TC':>9}  {'Energy':>7}  {'CohtMean':>8}  {'Severity':<12}  {'Tier':<10}  Raw Value",
-        "─" * 90,
     ]
 
-    for a in xai["marker_attributions"][:max_markers]:
-        marker_flag = "← PRIMARY" if a["is_primary"] else ""
-        raw_display = str(a["raw_value"]) if a["raw_value"] is not None else "MISSING"
-        lines.append(
-            f"{a['marker']:<14} {a['tc']:>+9.5f}  {a['energy']:>7.4f}  {a['cohort_mean']:>8.4f}  "
-            f"{a['severity']:<12}  {a['tier']:<10}  {raw_display}  {marker_flag}"
-        )
+    # ── Section 1: Phenotype flag ─────────────────────────────────────────────
+    ph = xai.get("phenotype", {})
+    if ph:
+        pstatus = ph.get("phenotype", "UNKNOWN")
+        psub    = ph.get("subtype", "")
+        pconf   = ph.get("confidence", "")
+        lines += [
+            "┌─ IMMUNE PHENOTYPE ─────────────────────────────────────────────────────────",
+            f"│  {pstatus}  ({psub})   Confidence: {pconf}",
+        ]
+        for ev in ph.get("evidence", []):
+            lines.append(f"│  Evidence  : {ev}")
+        for imp in ph.get("clinical_implications", []):
+            lines.append(f"│  ► {imp}")
+        lines.append("└───────────────────────────────────────────────────────────────────────────")
+        lines.append("")
 
-    lines.append("═" * 70)
+    # ── Section 2: Hard rules header ─────────────────────────────────────────
+    hard_rules = xai.get("hard_rules", [])
+    if hard_rules:
+        lines.append("┌─ HARD CLINICAL RULES ──────────────────────────────────────────────────────")
+        for r in hard_rules:
+            status_icon = "⚠ TRIGGERED" if r["status"] == "TRIGGERED" else (
+                "? INDET.   " if r["status"] == "INDETERMINATE" else "✓ PASS     "
+            )
+            lines.append(f"│  [{r['rule_id']}] {status_icon}  {r['name']}")
+            lines.append(f"│           {r['detail']}")
+        lines.append("└───────────────────────────────────────────────────────────────────────────")
+        lines.append("")
+
+    # ── Section 3: Attribution table, grouped by biological system ────────────
+    lines.append(f"┌─ PER-MARKER ATTRIBUTION  (Module {xai['module']} — worst drivers first) ──────────")
+    col_header = (
+        f"│  {'Marker':<14} {'TC':>9}  {'Energy':>7}  {'Severity':<12}  "
+        f"{'System':<15}  {'Raw Value':<12}  Ref Deviation"
+    )
+    lines.append(col_header)
+    lines.append("│  " + "─" * 90)
+
+    # Group markers by system, preserving TC sort within each group
+    attributions = xai["marker_attributions"][:max_markers]
+
+    # Build system → markers map (sorted by TC within each system)
+    from collections import defaultdict
+    sys_map: dict = defaultdict(list)
+    for a in attributions:
+        sys_map[a.get("system_group", "OTHER")].append(a)
+
+    # Print in canonical system order, remaining systems after
+    printed_systems: set = set()
+    for sys in _SYSTEM_ORDER:
+        group = sys_map.get(sys, [])
+        if not group:
+            continue
+        printed_systems.add(sys)
+        lines.append(f"│  ── {sys} {'─' * (85 - len(sys))}")
+        for a in group:
+            primary_flag  = " ◄ PRIMARY" if a["is_primary"] else ""
+            raw_display   = str(a["raw_value"]) if a["raw_value"] is not None else "MISSING"
+            ref_dev       = a.get("ref_deviation", "")
+            lines.append(
+                f"│  {a['marker']:<14} {a['tc']:>+9.5f}  {a['energy']:>7.4f}  "
+                f"{a['severity']:<12}  {sys:<15}  {raw_display:<12}  {ref_dev}{primary_flag}"
+            )
+
+    # Any markers not in _SYSTEM_ORDER
+    for sys, group in sys_map.items():
+        if sys not in printed_systems:
+            lines.append(f"│  ── {sys} {'─' * (85 - len(sys))}")
+            for a in group:
+                primary_flag = " ◄ PRIMARY" if a["is_primary"] else ""
+                raw_display  = str(a["raw_value"]) if a["raw_value"] is not None else "MISSING"
+                ref_dev      = a.get("ref_deviation", "")
+                lines.append(
+                    f"│  {a['marker']:<14} {a['tc']:>+9.5f}  {a['energy']:>7.4f}  "
+                    f"{a['severity']:<12}  {sys:<15}  {raw_display:<12}  {ref_dev}{primary_flag}"
+                )
+
+    lines.append("│")
+    lines.append(f"│  OUTCOME: {xai['predicted_outcome']}")
+    lines.append("└───────────────────────────────────────────────────────────────────────────")
     return "\n".join(lines)
 
 
