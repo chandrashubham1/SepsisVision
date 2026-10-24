@@ -1,0 +1,72 @@
+version: "3.9"
+
+services:
+
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER:     sepsisai
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_in_production}
+      POSTGRES_DB:       sepsisai
+    volumes:
+      - ./volumes/postgres:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"          # expose only on loopback in production
+    healthcheck:
+      test:     ["CMD-SHELL", "pg_isready -U sepsisai -d sepsisai"]
+      interval: 10s
+      timeout:  5s
+      retries:  5
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # ── SepsisAI API ────────────────────────────────────────────────────────────
+  sepsisai:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL:      postgresql://sepsisai:${POSTGRES_PASSWORD:-changeme_in_production}@postgres:5432/sepsisai
+      ADMIN_API_KEY:     ${ADMIN_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      CLAUDE_MODEL:      ${CLAUDE_MODEL:-claude-sonnet-4-20250514}
+      CLAUDE_MAX_TOKENS: ${CLAUDE_MAX_TOKENS:-3000}
+      CHROMA_PATH:       /data/chroma_db
+      COLLECTION_NAME:   ${COLLECTION_NAME:-sepsisai_full_collection_2026}
+      EMBED_MODEL:       ${EMBED_MODEL:-NeuML/pubmedbert-base-embeddings}
+      TOP_K:             ${TOP_K:-25}
+      FINAL_K:           ${FINAL_K:-10}
+      MIN_YEAR:          ${MIN_YEAR:-2015}
+      OUTPUT_DIR:        /data/patient_cache
+      DB_ECHO:           ${DB_ECHO:-false}
+    volumes:
+      - ./volumes/chroma_db:/data/chroma_db:ro
+      - ./volumes/patient_cache:/data/patient_cache
+    ports:
+      - "8000:8000"
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+    healthcheck:
+      test:     ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout:  10s
+      retries:  3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+volumes:
+  # named volumes as fallback if ./volumes/ dirs don't exist
+  postgres_data:

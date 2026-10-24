@@ -1,0 +1,29 @@
+# SepsisAI BEI API v2.0 — Python dependencies
+# Tested Python 3.10+
+
+# Web framework
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9      # required for file / form uploads
+
+# HTTP client (Claude API calls)
+httpx>=0.27.0
+
+# Data validation
+pydantic>=2.6.0
+
+# Database
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0       # PostgreSQL driver — use psycopg2 (non-binary) in production
+alembic>=1.13.0
+
+# ChromaDB + embeddings
+chromadb==0.5.23
+sentence-transformers==3.1.1
+onnxruntime>=1.17.0
+
+# PDF parsing
+pymupdf>=1.24.0              # PyMuPDF — provides fitz
+
+# Utilities
+tqdm>=4.66.0
