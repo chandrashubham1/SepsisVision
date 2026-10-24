@@ -438,7 +438,21 @@ textarea#json-input:focus { border-color: var(--accent); }
   background: var(--accent-bg); color: var(--accent);
 }
 .phase-status.done  { background: var(--ok-bg);   color: var(--ok); }
+.phase-status.ready { background: var(--ok-bg);   color: var(--ok); }
 .phase-status.error { background: var(--crit-bg); color: var(--critical); }
+
+/* ── Narrative toggle button ── */
+.narrative-toggle {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; text-align: left;
+  background: var(--bg-soft); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 14px;
+  font-family: var(--sans); font-size: 13px; font-weight: 600;
+  color: var(--fg); cursor: pointer; transition: background .15s, border-color .15s;
+}
+.narrative-toggle:hover { background: var(--accent-bg); border-color: var(--border-a); }
+.narrative-toggle-icon { font-size: 10px; color: var(--fg-dim); transition: transform .2s; }
+.narrative-toggle.open .narrative-toggle-icon { transform: rotate(90deg); }
 
 /* ── Print styles ── */
 @media print {
@@ -658,14 +672,15 @@ textarea#json-input:focus { border-color: var(--accent); }
         <div class="icd-section" id="icd-content"></div>
       </div>
 
-      <!-- Phase 3: Clinical Narrative (streaming) -->
+      <!-- Phase 3: Clinical Narrative (on-demand expand) -->
       <div id="narrative-section" style="margin-top:24px;display:none">
-        <div class="section-title" style="display:flex;align-items:center;gap:10px">
+        <button class="narrative-toggle" id="narrative-toggle" onclick="toggleNarrative()">
+          <span class="narrative-toggle-icon" id="narrative-toggle-icon">▶</span>
           Clinical Narrative
-          <span class="phase-status" id="narrative-status">● Streaming…</span>
-        </div>
-        <div class="narrative-card" id="narrative-card">
-          <span id="narrative-text"></span><span class="stream-cursor" id="stream-cursor">▌</span>
+          <span class="phase-status" id="narrative-status" style="margin-left:auto">● Loading…</span>
+        </button>
+        <div class="narrative-card" id="narrative-card" style="display:none;margin-top:8px">
+          <span id="narrative-text"></span><span class="stream-cursor" id="stream-cursor" style="display:none">▌</span>
         </div>
       </div>
 
@@ -905,19 +920,58 @@ function setPip(id, state /* 'idle'|'live'|'done' */) {
   else el.style.animation = '';
 }
 
-// ── Phase 3: streaming narrative ──────────────────────────────────────────────
+// ── Narrative buffer state (module-level) ─────────────────────────────────────
+let _narrativeBuffer   = [];   // tokens received so far
+let _narrativeDone     = false;
+let _narrativeError    = null;
+let _narrativeExpanded = false;
+
+function toggleNarrative() {
+  _narrativeExpanded = !_narrativeExpanded;
+  const toggle = document.getElementById('narrative-toggle');
+  const card   = document.getElementById('narrative-card');
+  const cursor = document.getElementById('stream-cursor');
+
+  toggle.classList.toggle('open', _narrativeExpanded);
+  card.style.display = _narrativeExpanded ? 'block' : 'none';
+
+  if (_narrativeExpanded) {
+    // Flush buffer to DOM
+    const textEl = document.getElementById('narrative-text');
+    textEl.textContent = _narrativeBuffer.join('');
+    if (_narrativeError && !_narrativeBuffer.length) {
+      textEl.textContent = _narrativeError;
+    }
+    // Show blinking cursor only if still streaming
+    cursor.style.display = _narrativeDone ? 'none' : 'inline-block';
+    // Scroll to bottom
+    card.scrollTop = card.scrollHeight;
+  } else {
+    cursor.style.display = 'none';
+  }
+}
+
+// ── Phase 3: streaming narrative (background, buffered) ───────────────────────
 async function runNarrativeStream(payload, apiBase, apiKey) {
   const section  = document.getElementById('narrative-section');
   const textEl   = document.getElementById('narrative-text');
   const cursorEl = document.getElementById('stream-cursor');
   const statusEl = document.getElementById('narrative-status');
 
-  // Reset state
-  textEl.textContent  = '';
-  cursorEl.style.display = 'inline-block';
-  statusEl.textContent = '● Streaming…';
-  statusEl.className   = 'phase-status';
-  section.style.display = 'block';
+  // Reset buffer state
+  _narrativeBuffer   = [];
+  _narrativeDone     = false;
+  _narrativeError    = null;
+  _narrativeExpanded = false;
+
+  // Reset DOM
+  textEl.textContent     = '';
+  cursorEl.style.display = 'none';
+  statusEl.textContent   = '● Loading…';
+  statusEl.className     = 'phase-status';
+  document.getElementById('narrative-toggle').classList.remove('open');
+  document.getElementById('narrative-card').style.display = 'none';
+  section.style.display  = 'block';
 
   // Show phase strip
   document.getElementById('phase-strip').style.display = 'flex';
@@ -934,11 +988,13 @@ async function runNarrativeStream(payload, apiBase, apiKey) {
 
     if (!resp.ok || !resp.body) {
       const errText = await resp.text();
-      textEl.textContent = '[Stream error ' + resp.status + '] ' + errText.slice(0, 300);
+      _narrativeError = '[Stream error ' + resp.status + '] ' + errText.slice(0, 300);
+      _narrativeDone  = true;
       statusEl.textContent = '✕ Error';
       statusEl.className = 'phase-status error';
       cursorEl.style.display = 'none';
       setPip('narrative', 'idle');
+      if (_narrativeExpanded) textEl.textContent = _narrativeError;
       return;
     }
 
@@ -977,22 +1033,31 @@ async function runNarrativeStream(payload, apiBase, apiKey) {
           try {
             const evt = JSON.parse(payload_str);
             if (lastEvent === 'bei') {
-              // Phase 1 BEI data already rendered — ignore duplicate
+              // Phase 1 BEI data already rendered — ignore
             } else if (lastEvent === 'token') {
-              textEl.textContent += evt.text || '';
-              // Auto-scroll narrative card
-              const card = document.getElementById('narrative-card');
-              card.scrollTop = card.scrollHeight;
+              const text = evt.text || '';
+              _narrativeBuffer.push(text);
+              // If card is expanded, render live
+              if (_narrativeExpanded) {
+                textEl.textContent += text;
+                const card = document.getElementById('narrative-card');
+                card.scrollTop = card.scrollHeight;
+              }
             } else if (lastEvent === 'error') {
-              textEl.textContent += '\n[Error: ' + (evt.error || 'unknown') + ']';
+              _narrativeError = evt.error || 'unknown';
+              _narrativeDone  = true;
               cursorEl.style.display = 'none';
               statusEl.textContent = '✕ Error';
               statusEl.className = 'phase-status error';
               setPip('narrative', 'idle');
+              if (_narrativeExpanded) {
+                textEl.textContent += '\n[Error: ' + _narrativeError + ']';
+              }
             } else if (lastEvent === 'done') {
+              _narrativeDone = true;
               cursorEl.style.display = 'none';
-              statusEl.textContent = '✓ Done';
-              statusEl.className = 'phase-status done';
+              statusEl.textContent = '✓ Ready — click to view';
+              statusEl.className = 'phase-status ready';
               setPip('narrative', 'done');
             }
           } catch(_) { /* skip malformed line */ }
@@ -1001,11 +1066,15 @@ async function runNarrativeStream(payload, apiBase, apiKey) {
     }
 
   } catch(err) {
-    textEl.textContent = '[Connection error] ' + err.message;
+    _narrativeError = err.message;
+    _narrativeDone  = true;
     cursorEl.style.display = 'none';
     statusEl.textContent = '✕ Error';
     statusEl.className = 'phase-status error';
     setPip('narrative', 'idle');
+    if (_narrativeExpanded) {
+      textEl.textContent = '[Connection error] ' + err.message;
+    }
   }
 }
 
