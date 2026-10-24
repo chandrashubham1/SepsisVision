@@ -6,7 +6,7 @@ Usage:
     py -3.11 test_bei.py
 """
 from bei_engine import compute_bei
-from xai_engine import compute_xai_attribution, format_xai_for_prompt
+from xai_engine import build_xai_attribution, format_xai_for_prompt
 
 # ── Test patient: severe sepsis profile ──────────────────────────────────────
 patient = {
@@ -50,11 +50,7 @@ for marker, val in sorted_tc:
 
 # ── Run xAI ──────────────────────────────────────────────────────────────────
 print("\n[2/2] Computing xAI attribution...")
-xai = compute_xai_attribution(
-    bei_result=result,
-    raw_input=patient,
-    module="A",
-)
+xai = build_xai_attribution(bei=result, raw=patient)
 
 print(f"\n  Predicted outcome : {xai['predicted_outcome']}")
 print(f"  Zone confidence   : {xai['zone_confidence']}")
