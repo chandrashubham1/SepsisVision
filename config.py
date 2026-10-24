@@ -50,7 +50,7 @@ MIN_YEAR = int(os.getenv("MIN_YEAR", "2015"))   # int — ChromaDB $gte requires
 
 # ── Claude / Anthropic ────────────────────────────────────────────────────────
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-CLAUDE_MODEL      = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-20250514")
+CLAUDE_MODEL      = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5")
 CLAUDE_MAX_TOKENS = int(os.getenv("CLAUDE_MAX_TOKENS", "3000"))
 
 # ── Output / Audit (legacy — kept for CLI/script compatibility) ────────────────
