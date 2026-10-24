@@ -85,6 +85,7 @@ class Analysis(Base):
         Index("ix_analyses_hospital_patient", "hospital_id", "patient_id"),
         Index("ix_analyses_hospital_zone",    "hospital_id", "bei_zone"),
         Index("ix_analyses_analyzed_at",      "analyzed_at"),
+        Index("ix_analyses_hospital_b_zone",  "hospital_id", "bei_b_zone"),
     )
 
     id          = Column(UUID(as_uuid=False), primary_key=True, default=_uuid)
@@ -108,6 +109,11 @@ class Analysis(Base):
     n_missing       = Column(Integer,     nullable=False)
     lactate_missing = Column(Boolean,     nullable=False, default=False)
     low_confidence  = Column(Boolean,     nullable=False, default=False)
+
+    # ── Module B (KILL-4) ─────────────────────────────────────────────────────
+    module      = Column(String(10),  nullable=False, default="A")   # 'A', 'B', 'BOTH'
+    bei_b_score = Column(Float,       nullable=True)
+    bei_b_zone  = Column(String(20),  nullable=True)
 
     # ── Treatment synthesis ────────────────────────────────────────────────────
     synthesis_text     = Column(Text,        nullable=True)

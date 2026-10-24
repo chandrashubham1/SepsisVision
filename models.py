@@ -26,6 +26,12 @@ class TippingTier(str, Enum):
     UNKNOWN  = "UNKNOWN"
 
 
+class BEIModule(str, Enum):
+    A    = "A"
+    B    = "B"
+    BOTH = "both"
+
+
 # ── Request models ────────────────────────────────────────────────────────────
 
 class BiomarkerInput(BaseModel):
@@ -116,9 +122,34 @@ class AnalysisRequest(BaseModel):
         None,
         description="Medical record number, if different from patient_id",
     )
+    module: BEIModule = Field(
+        BEIModule.A,
+        description=(
+            "'A' = full 17-marker BEI (default, AUC=0.812); "
+            "'B' = KILL-4 reduced panel (D-dimer, SOFA, Lactate, PTX3 — AUC unvalidated); "
+            "'both' = run both engines and return a structured comparison block"
+        ),
+    )
 
 
 # ── BEI response models ───────────────────────────────────────────────────────
+
+class ModuleComparison(BaseModel):
+    """Structured comparison of Module A (17-marker) vs Module B (KILL-4)."""
+    zone_agreement:    bool
+    score_delta:       float  = Field(..., description="Module A score minus Module B score")
+    delta_note:        str
+    tipping_agreement: bool
+    module_a_score:    float
+    module_b_score:    float
+    module_a_zone:     str
+    module_b_zone:     str
+    module_a_tipping:  str
+    module_b_tipping:  str
+    module_a_coverage: float = 0.0
+    module_b_coverage: float = 0.0
+    validation_note:   str
+
 
 class BEIResult(BaseModel):
     bei_score:             float     = Field(..., description="BEI composite [0=collapse, 1=homeostasis]")
@@ -160,7 +191,10 @@ class AnalysisResponse(BaseModel):
     patient_id:          str
     analysis_id:         Optional[str] = Field(None, description="UUID of this analysis in the database")
     internal_patient_id: Optional[str] = Field(None, description="Internal patient UUID")
+    module:              str           = Field("A", description="Module used: A, B, or both")
     bei:                 BEIResult
+    module_b:            Optional[BEIResult]        = Field(None, description="KILL-4 result (module B or both)")
+    comparison:          Optional[ModuleComparison] = Field(None, description="Module A vs B comparison (module=both)")
     treatment:           Optional[TreatmentSynthesis] = None
     rag_chunks:          Optional[List[RagChunk]]     = None
     unit_corrections:    List[str] = Field(default_factory=list)
@@ -275,6 +309,9 @@ class AnalysisSummary(BaseModel):
     low_confidence:      bool
     input_source:        str
     analyzed_at:         str
+    module:              str            = "A"
+    bei_b_score:         Optional[float] = None
+    bei_b_zone:          Optional[str]   = None
 
     model_config = {"from_attributes": True}
 

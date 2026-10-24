@@ -206,6 +206,8 @@ def create_analysis(
     treatment_result: Optional[dict],
     input_source:     str = "json",
     pdf_filename:     Optional[str] = None,
+    module:           str = "A",
+    bei_b:            Optional[dict] = None,
 ) -> Analysis:
     """
     Persist a complete BEI analysis to the database.
@@ -230,6 +232,10 @@ def create_analysis(
         n_missing=int(bei.get("n_missing", 0)),
         lactate_missing=bool(bei.get("lactate_missing_warning", False)),
         low_confidence=bei.get("coverage_pct", 100) < 60,
+
+        module=module,
+        bei_b_score=bei_b["bei_score"] if bei_b else None,
+        bei_b_zone=bei_b["bei_zone"]   if bei_b else None,
 
         synthesis_text=(
             treatment_result.get("synthesis_text") if treatment_result else None

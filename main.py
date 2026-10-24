@@ -26,7 +26,10 @@ from sqlalchemy.orm import Session
 import config
 import crud
 from auth import get_current_hospital, require_admin
-from bei_engine import BEI_WEIGHTS, BEI_ZONES, build_clinical_flags, compute_bei
+from bei_engine import (
+    BEI_WEIGHTS, BEI_ZONES, KILL4_WEIGHTS,
+    build_clinical_flags, compare_modules, compute_bei, compute_bei_b,
+)
 from database import check_db_connection, create_tables, get_db
 from db_models import Analysis, Hospital
 from lab_parser import merge_markers, parse_blood_report_pdf
@@ -34,6 +37,7 @@ from models import (
     AnalysisRequest,
     AnalysisResponse,
     AnalysisSummary,
+    BEIModule,
     BEIResult,
     BEIZone,
     HealthResponse,
@@ -42,6 +46,7 @@ from models import (
     HospitalResponse,
     HospitalStats,
     KeyRotated,
+    ModuleComparison,
     PaginatedResponse,
     PatientResponse,
     PDFExtractionResult,
@@ -118,20 +123,9 @@ def _get_client_ip(request: Request) -> str:
             else request.client.host if request.client else "unknown")
 
 
-def _build_analysis_response(
-    *,
-    patient_id:          str,
-    analysis_id:         Optional[str],
-    internal_patient_id: Optional[str],
-    bei:                 dict,
-    unit_corrections:    List[str],
-    clinical_flags:      List[str],
-    treatment_result:    Optional[dict],
-    rag_chunks:          Optional[List[dict]],
-    include_rag_chunks:  bool,
-) -> AnalysisResponse:
-    """Assemble an AnalysisResponse from raw BEI + treatment dicts."""
-    bei_result = BEIResult(
+def _make_bei_result(bei: dict) -> BEIResult:
+    """Convert a raw BEI engine dict to a BEIResult Pydantic model."""
+    return BEIResult(
         bei_score=bei["bei_score"],
         bei_zone=BEIZone(bei["bei_zone"]),
         bei_zone_detail=bei["bei_zone_detail"],
@@ -148,6 +142,30 @@ def _build_analysis_response(
         coverage_pct=bei["coverage_pct"],
         lactate_missing_warning=bei.get("lactate_missing_warning", False),
     )
+
+
+def _build_analysis_response(
+    *,
+    patient_id:          str,
+    analysis_id:         Optional[str],
+    internal_patient_id: Optional[str],
+    module:              str,
+    bei:                 dict,
+    bei_b:               Optional[dict],
+    comparison:          Optional[dict],
+    unit_corrections:    List[str],
+    clinical_flags:      List[str],
+    treatment_result:    Optional[dict],
+    rag_chunks:          Optional[List[dict]],
+    include_rag_chunks:  bool,
+) -> AnalysisResponse:
+    """Assemble an AnalysisResponse from raw BEI + optional Module B + treatment dicts."""
+    bei_result   = _make_bei_result(bei)
+    bei_b_result = _make_bei_result(bei_b) if bei_b else None
+
+    comparison_obj: Optional[ModuleComparison] = None
+    if comparison:
+        comparison_obj = ModuleComparison(**comparison)
 
     treatment_obj: Optional[TreatmentSynthesis] = None
     if treatment_result:
@@ -174,19 +192,23 @@ def _build_analysis_response(
             for c in rag_chunks
         ]
 
-    low_conf = bei["coverage_pct"] < 60
+    low_conf   = bei["coverage_pct"] < 60
+    panel_size = bei.get("panel_size", 17)
     return AnalysisResponse(
         patient_id=patient_id,
         analysis_id=analysis_id,
         internal_patient_id=internal_patient_id,
+        module=module,
         bei=bei_result,
+        module_b=bei_b_result,
+        comparison=comparison_obj,
         treatment=treatment_obj,
         rag_chunks=chunks_out,
         unit_corrections=unit_corrections,
         clinical_flags=clinical_flags,
         low_confidence_flag=low_conf,
         low_confidence_note=(
-            f"Only {bei['n_available']}/17 markers provided "
+            f"Only {bei['n_available']}/{panel_size} markers provided "
             f"(coverage {bei['coverage_pct']:.0f}%). "
             "BEI may be unreliable — obtain full panel before acting."
         ) if low_conf else "",
@@ -206,20 +228,32 @@ def _run_analysis(
     db:                 Session,
     input_source:       str = "json",
     pdf_filename:       Optional[str] = None,
+    module:             str = "A",
 ) -> AnalysisResponse:
     """
     Core analysis pipeline — called by all /analyze endpoints.
-    1. Compute BEI
+    1. Compute BEI (Module A, B, or both)
     2. Build clinical flags
     3. Persist patient + analysis to database
     4. Optionally run RAG retrieval + treatment synthesis
     5. Return AnalysisResponse
     """
     # ── 1. BEI computation ────────────────────────────────────────────────────
-    bei = compute_bei(raw_input)
+    bei:        dict              = compute_bei(raw_input)   # Module A always computed
+    bei_b:      Optional[dict]   = None
+    comparison: Optional[dict]   = None
+
+    if module in ("B", "both"):
+        bei_b = compute_bei_b(raw_input)
+
+    if module == "both" and bei_b:
+        comparison = compare_modules(bei, bei_b)
+
+    # When module=B only, swap primary BEI to Module B for treatment synthesis context
+    bei_primary = bei_b if module == "B" else bei
 
     # ── 2. Clinical flags ─────────────────────────────────────────────────────
-    flags = build_clinical_flags(bei, raw_input)
+    flags = build_clinical_flags(bei_primary, raw_input)
 
     # ── 3. Optionally run treatment synthesis first (before DB write so we
     #        can store synthesis_text in one transaction)
@@ -244,7 +278,7 @@ def _run_analysis(
             )
         try:
             chunks = _retriever.retrieve_for_bei(
-                bei,
+                bei_primary,
                 top_k=config.TOP_K,
                 final_k=config.FINAL_K,
             )
@@ -256,7 +290,7 @@ def _run_analysis(
             treatment_result = synthesize_treatment(
                 data={
                     "patient_id": external_patient_id,
-                    "bei": bei,
+                    "bei": bei_primary,
                     "raw_input": raw_input,
                 },
                 chunks=chunks,
@@ -282,13 +316,15 @@ def _run_analysis(
         db=db,
         patient=patient,
         hospital_id=hospital.id,
-        bei=bei,
+        bei=bei_primary,
         raw_input=raw_input,
         unit_corrections=unit_corrections,
         clinical_flags=flags,
         treatment_result=treatment_result,
         input_source=input_source,
         pdf_filename=pdf_filename,
+        module=module.upper(),
+        bei_b=bei_b if module in ("B", "both") else None,
     )
 
     # ── 5. Audit log ───────────────────────────────────────────────────────────
@@ -306,7 +342,10 @@ def _run_analysis(
         patient_id=external_patient_id,
         analysis_id=db_analysis.id,
         internal_patient_id=patient.id,
-        bei=bei,
+        module=module,
+        bei=bei_primary,
+        bei_b=bei_b if module == "both" else None,
+        comparison=comparison,
         unit_corrections=unit_corrections,
         clinical_flags=flags,
         treatment_result=treatment_result,
@@ -623,6 +662,9 @@ def get_patient_analyses(
                 low_confidence=a.low_confidence,
                 input_source=a.input_source,
                 analyzed_at=a.analyzed_at.isoformat(),
+                module=getattr(a, "module", "A") or "A",
+                bei_b_score=getattr(a, "bei_b_score", None),
+                bei_b_zone=getattr(a, "bei_b_zone", None),
             )
             for a in analyses
         ],
@@ -672,6 +714,7 @@ def analyze_json(
         mrn=body.mrn,
         db=db,
         input_source="json",
+        module=body.module.value,
     )
 
 
@@ -689,6 +732,10 @@ async def analyze_pdf(
     include_treatment: bool       = Form(True),
     include_rag_chunks: bool      = Form(False),
     mrn:               Optional[str] = Form(None),
+    module:            str           = Form(
+        "A",
+        description="'A' = full 17-marker BEI (default); 'B' = KILL-4 reduced panel; 'both' = run both",
+    ),
     marker_overrides:  Optional[str] = Form(
         None,
         description='JSON object with additional marker values, e.g. \'{"PTX3": 28.82, "IL-10": 3.87}\'',
@@ -736,6 +783,14 @@ async def analyze_pdf(
             ),
         )
 
+    # Validate module value from Form field
+    module_clean = module.strip() if module else "A"
+    if module_clean not in ("A", "B", "both"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="module must be one of: A, B, both",
+        )
+
     return _run_analysis(
         request=request,
         hospital=hospital,
@@ -748,6 +803,7 @@ async def analyze_pdf(
         db=db,
         input_source="pdf",
         pdf_filename=file.filename,
+        module=module_clean,
     )
 
 
@@ -773,6 +829,7 @@ def get_analysis(
     # Reconstruct BEI dict from ORM fields (for response assembly)
     energy_profile = {r.marker_name: r.energy_score for r in a.biomarkers if r.energy_score is not None}
     tc_dict        = {r.marker_name: r.tc_value      for r in a.biomarkers if r.tc_value      is not None}
+    stored_module  = getattr(a, "module", "A") or "A"
 
     bei = {
         "bei_score":               a.bei_score,
@@ -790,7 +847,30 @@ def get_analysis(
         "n_missing":               a.n_missing,
         "coverage_pct":            a.coverage_pct,
         "lactate_missing_warning": a.lactate_missing,
+        "panel_size":              len(KILL4_WEIGHTS) if stored_module == "B" else 17,
     }
+
+    # Reconstruct a minimal Module B dict from stored columns (if present)
+    bei_b_reconstructed: Optional[dict] = None
+    if stored_module in ("B", "BOTH") and getattr(a, "bei_b_score", None) is not None:
+        bei_b_reconstructed = {
+            "bei_score":               a.bei_b_score,
+            "bei_zone":                a.bei_b_zone or "UNKNOWN",
+            "bei_zone_detail":         "",
+            "energy_profile":          {},
+            "tipping_contributions":   {},
+            "tipping_marker":          "",
+            "tipping_tier":            "UNKNOWN",
+            "tipping_action":          "",
+            "gcs_alarm":               False,
+            "gh5_score":               None,
+            "missing_markers":         [],
+            "n_available":             0,
+            "n_missing":               len(KILL4_WEIGHTS),
+            "coverage_pct":            0.0,
+            "lactate_missing_warning": False,
+            "panel_size":              len(KILL4_WEIGHTS),
+        }
 
     treatment_result = None
     if a.synthesis_text:
@@ -806,7 +886,10 @@ def get_analysis(
         patient_id=a.external_patient_id,
         analysis_id=a.id,
         internal_patient_id=a.patient_id,
+        module=stored_module,
         bei=bei,
+        bei_b=bei_b_reconstructed if stored_module == "BOTH" else None,
+        comparison=None,   # comparison not persisted; recomputable from scores if needed
         unit_corrections=[c.correction_text for c in a.unit_corrections],
         clinical_flags=[f.flag_text for f in a.clinical_flags],
         treatment_result=treatment_result,
