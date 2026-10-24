@@ -142,8 +142,15 @@ _TOOL_HTML: str = (_pathlib.Path(__file__).parent / "tool.html").read_text(encod
 
 @app.get("/tool", response_class=HTMLResponse, include_in_schema=False)
 def tool_page() -> HTMLResponse:
-    """Serve the BEI Analysis Tool UI."""
-    return HTMLResponse(content=_TOOL_HTML)
+    """Serve the BEI Analysis Tool UI — always fresh, never cached."""
+    html = (_pathlib.Path(__file__).parent / "tool.html").read_text(encoding="utf-8")
+    return HTMLResponse(
+        content=html,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Pragma":        "no-cache",
+        },
+    )
 
 
 # Serve static assets (Sutra logo, etc.)
