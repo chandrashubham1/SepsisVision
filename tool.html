@@ -752,9 +752,24 @@ async function runAnalysis() {
     showError('Invalid JSON: ' + err.message); return;
   }
 
-  // Ensure module + xai are set
-  if (!payload.module) payload.module = currentModule;
-  payload.include_xai = true;
+  // ── Normalise to AnalysisRequest shape ──────────────────────────────────────
+  // Accept two flavours:
+  //  A) old/user-friendly: { patient_id, markers: {...}, module, include_xai }
+  //  B) native API shape:  { biomarkers: { patient_id, ...markers }, module, … }
+  if (payload.markers !== undefined && payload.biomarkers === undefined) {
+    // Flatten markers + patient_id into the biomarkers object
+    payload = {
+      biomarkers: Object.assign({ patient_id: payload.patient_id || 'UNKNOWN' }, payload.markers),
+      include_treatment: true,
+      include_xai:       payload.include_xai !== false,
+      module:            payload.module || currentModule,
+    };
+  } else {
+    // Already in native shape — just fill defaults
+    if (!payload.module)               payload.module            = currentModule;
+    if (payload.include_xai === undefined) payload.include_xai   = true;
+    if (payload.include_treatment === undefined) payload.include_treatment = true;
+  }
 
   const apiBase = document.getElementById('api-url').value.replace(/\/$/, '');
   const apiKey  = document.getElementById('api-key').value.trim();
@@ -776,8 +791,14 @@ async function runAnalysis() {
     const data = await resp.json();
 
     if (!resp.ok) {
-      const detail = data.detail || JSON.stringify(data);
-      showError(`API error ${resp.status}: ${detail}`);
+      let detail = data.detail;
+      if (Array.isArray(detail)) {
+        // FastAPI validation errors → array of {loc, msg, type}
+        detail = detail.map(e => `${e.loc?.join('.')||''}: ${e.msg}`).join('\n');
+      } else if (typeof detail !== 'string') {
+        detail = JSON.stringify(detail, null, 2);
+      }
+      showError(`API error ${resp.status}: ${detail || JSON.stringify(data)}`);
       return;
     }
 
