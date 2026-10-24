@@ -198,6 +198,8 @@ def _build_analysis_response(
 
     # ── xAI report ────────────────────────────────────────────────────────────
     xai_report_obj: Optional[XAIReport] = None
+    xmd_document:   Optional[dict]      = None
+
     if xai_result:
         xai_data = xai_result.get("xai_attribution") or xai_result
         top_d    = xai_data.get("top_driver")
@@ -217,6 +219,21 @@ def _build_analysis_response(
             rounds_model_used  = xai_result.get("model_used"),
         )
 
+        # ── FDA xmd xAI document ─────────────────────────────────────────────
+        # Build once per analysis; zero API cost (deterministic)
+        try:
+            from fda_xai_schema import build_xai_document, serialise_xai_document
+            xmd_doc = build_xai_document(
+                patient_id=patient_id,
+                analysis_id=analysis_id or "",
+                bei=bei,
+                raw_input=xai_result.get("_raw_input", {}),
+                xai_data=xai_data,
+            )
+            xmd_document = serialise_xai_document(xmd_doc)
+        except Exception as exc:
+            logger.warning("FDA xmd document generation failed (non-fatal): %s", exc)
+
     low_conf   = bei["coverage_pct"] < 60
     panel_size = bei.get("panel_size", 17)
     return AnalysisResponse(
@@ -229,6 +246,7 @@ def _build_analysis_response(
         comparison=comparison_obj,
         treatment=treatment_obj,
         xai_report=xai_report_obj,
+        xmd_document=xmd_document,
         rag_chunks=chunks_out,
         unit_corrections=unit_corrections,
         clinical_flags=clinical_flags,
@@ -290,7 +308,10 @@ def _run_analysis(
     if include_xai:
         try:
             xai_data = build_xai_attribution(bei_primary, raw_input)
-            xai_result = {"xai_attribution": xai_data}
+            xai_result = {
+                "xai_attribution": xai_data,
+                "_raw_input":      raw_input,  # passed to FDA xmd builder (not sent in API response)
+            }
         except Exception as exc:
             logger.warning("xAI attribution failed (non-fatal): %s", exc)
 

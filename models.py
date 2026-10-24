@@ -253,6 +253,15 @@ class AnalysisResponse(BaseModel):
     comparison:          Optional[ModuleComparison] = Field(None, description="Module A vs B comparison (module=both)")
     treatment:           Optional[TreatmentSynthesis] = None
     xai_report:          Optional[XAIReport]          = Field(None, description="xAI attribution + rounds narrative")
+    xmd_document:        Optional[dict]               = Field(
+        None,
+        description=(
+            "FDA xmd xAI explainability document — structured De Novo SaMD "
+            "submission record with per-marker attribution, hard rules, "
+            "performance claims, and algorithmic change protocol. "
+            "Only present when include_xai=True. Serialised from XMDDocument."
+        ),
+    )
     rag_chunks:          Optional[List[RagChunk]]     = None
     unit_corrections:    List[str] = Field(default_factory=list)
     clinical_flags:      List[str]
