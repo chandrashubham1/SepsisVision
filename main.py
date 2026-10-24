@@ -122,7 +122,7 @@ app.add_middleware(
 # ── Landing page ──────────────────────────────────────────────────────────────
 import pathlib as _pathlib
 
-_LANDING_HTML: str = (_pathlib.Path(__file__).parent / "landing.html").read_text()
+_LANDING_HTML: str = (_pathlib.Path(__file__).parent / "landing.html").read_text(encoding="utf-8")
 
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
@@ -132,7 +132,7 @@ def root() -> HTMLResponse:
 
 
 # ── Analysis tool page ────────────────────────────────────────────────────────
-_TOOL_HTML: str = (_pathlib.Path(__file__).parent / "tool.html").read_text()
+_TOOL_HTML: str = (_pathlib.Path(__file__).parent / "tool.html").read_text(encoding="utf-8")
 
 
 @app.get("/tool", response_class=HTMLResponse, include_in_schema=False)
