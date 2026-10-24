@@ -328,9 +328,14 @@ def _run_analysis(
             ]
             treatment_result = synthesize_treatment(
                 data={
-                    "patient_id": external_patient_id,
-                    "bei": bei_primary,
-                    "raw_input": raw_input,
+                    "patient_id":      external_patient_id,
+                    "bei":             bei_primary,
+                    "raw_input":       raw_input,
+                    # Pass xAI attribution so treatment prompt gets the
+                    # per-marker TC table (deterministic, no extra API cost)
+                    "xai_attribution": (
+                        xai_result.get("xai_attribution") if xai_result else None
+                    ),
                 },
                 chunks=chunks,
                 api_key=config.ANTHROPIC_API_KEY,

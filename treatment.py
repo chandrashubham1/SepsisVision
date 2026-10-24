@@ -16,6 +16,7 @@ from typing import Dict, List, Optional
 import httpx
 
 from rag_retrieval import format_chunks_for_claude
+from xai_engine import format_xai_for_prompt
 from config import CLAUDE_MODEL, CLAUDE_MAX_TOKENS, INVESTIGATIONAL_DISCLAIMER
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,18 @@ def _build_treatment_prompt(
     )
     raw_str = "\n".join(f"  {k}: {v}" for k, v in raw.items())
     corrections = "\n".join(f"  {c}" for c in data.get("unit_corrections", []))
+
+    # ── xAI attribution block (injected when present — no API cost) ───────────
+    xai_attribution = data.get("xai_attribution")
+    xai_block = ""
+    if xai_attribution:
+        xai_table = format_xai_for_prompt(xai_attribution)
+        xai_block = (
+            "\n═══ xAI ATTRIBUTION (per-marker tipping contributions) ═════\n"
+            "TC = W(marker) × [E(patient) − E(cohort_mean)]. Most negative = primary failure driver.\n"
+            f"{xai_table}\n"
+            "════════════════════════════════════════════════════════════\n"
+        )
 
     gcs_note = (
         "GCS ALARM ACTIVE: GCS ≤14 detected. 67% 90-day mortality threshold."
@@ -151,7 +164,7 @@ TC({tipping}): {tc.get(tipping, 0):+.5f}
 
 TOP FAILING DIMENSIONS:
 {neg_tc_str}
-
+{xai_block}
 RAW BIOMARKER VALUES:
 {raw_str}
 
@@ -210,6 +223,9 @@ INSTRUCTIONS:
 - This is decision-support only — clinician makes final call
 - Do NOT mention outcome_90d
 - No preamble. Start immediately with SECTION A.
+- If the xAI attribution table is present above, use the TC severity and
+  tier columns to rank interventions by urgency in Sections B and C.
+  Markers labelled CRITICAL tier should be addressed first.
 
 Produce EXACTLY these sections:
 
