@@ -57,7 +57,7 @@ print(f"  Zone confidence   : {xai['zone_confidence']}")
 print(f"  Summary           : {xai['xai_summary']}")
 
 print("\n  xAI Attribution Table:")
-print(format_xai_for_prompt(xai["xai_attribution"]))
+print(format_xai_for_prompt(xai))
 
 print("\n" + "=" * 60)
 print("Test complete. No database or API server required.")
