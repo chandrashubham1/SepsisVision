@@ -78,10 +78,14 @@ async def lifespan(app: FastAPI):
 
     # Ensure database tables exist (idempotent — Alembic is preferred in prod)
     try:
-        create_tables()
+        import asyncio as _asyncio
+        await _asyncio.wait_for(
+            _asyncio.get_event_loop().run_in_executor(None, create_tables),
+            timeout=5.0,
+        )
         logger.info("Database tables ready.")
     except Exception as exc:
-        logger.error("Database setup failed: %s", exc)
+        logger.warning("Database setup skipped (non-fatal — no DB connection?): %s", exc)
 
     # Load ChromaDB RAG retriever
     try:
