@@ -21,6 +21,8 @@ from fastapi import (
     Request, UploadFile, status,
 )
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
 import config
@@ -116,6 +118,23 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Landing page ──────────────────────────────────────────────────────────────
+import pathlib as _pathlib
+
+_LANDING_HTML: str = (_pathlib.Path(__file__).parent / "landing.html").read_text()
+
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+def root() -> HTMLResponse:
+    """Serve the SepsisAI BEI API landing page."""
+    return HTMLResponse(content=_LANDING_HTML)
+
+
+# Serve static assets (Sutra logo, etc.)
+_static_dir = _pathlib.Path(__file__).parent / "static"
+if _static_dir.is_dir():
+    app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
