@@ -53,9 +53,12 @@ from models import (
     RagChunk,
     TippingTier,
     TreatmentSynthesis,
+    XAIMarkerAttribution,
+    XAIReport,
 )
 from rag_retrieval import RagRetriever
 from treatment import synthesize_treatment
+from xai_engine import build_xai_attribution, synthesize_rounds_report
 
 logging.basicConfig(
     level=logging.INFO,
@@ -158,6 +161,7 @@ def _build_analysis_response(
     treatment_result:    Optional[dict],
     rag_chunks:          Optional[List[dict]],
     include_rag_chunks:  bool,
+    xai_result:          Optional[dict] = None,
 ) -> AnalysisResponse:
     """Assemble an AnalysisResponse from raw BEI + optional Module B + treatment dicts."""
     bei_result   = _make_bei_result(bei)
@@ -192,6 +196,27 @@ def _build_analysis_response(
             for c in rag_chunks
         ]
 
+    # ── xAI report ────────────────────────────────────────────────────────────
+    xai_report_obj: Optional[XAIReport] = None
+    if xai_result:
+        xai_data = xai_result.get("xai_attribution") or xai_result
+        top_d    = xai_data.get("top_driver")
+        xai_report_obj = XAIReport(
+            module             = xai_data.get("module", module),
+            bei_score          = xai_data.get("bei_score", 0.0),
+            bei_zone           = xai_data.get("bei_zone", "UNKNOWN"),
+            predicted_outcome  = xai_data.get("predicted_outcome", ""),
+            zone_confidence    = xai_data.get("zone_confidence", ""),
+            xai_summary        = xai_data.get("xai_summary", ""),
+            n_markers          = xai_data.get("n_markers", 0),
+            top_driver         = XAIMarkerAttribution(**top_d) if top_d else None,
+            marker_attributions= [
+                XAIMarkerAttribution(**a) for a in xai_data.get("marker_attributions", [])
+            ],
+            rounds_narrative   = xai_result.get("rounds_text"),
+            rounds_model_used  = xai_result.get("model_used"),
+        )
+
     low_conf   = bei["coverage_pct"] < 60
     panel_size = bei.get("panel_size", 17)
     return AnalysisResponse(
@@ -203,6 +228,7 @@ def _build_analysis_response(
         module_b=bei_b_result,
         comparison=comparison_obj,
         treatment=treatment_obj,
+        xai_report=xai_report_obj,
         rag_chunks=chunks_out,
         unit_corrections=unit_corrections,
         clinical_flags=clinical_flags,
@@ -223,6 +249,8 @@ def _run_analysis(
     raw_input:          dict,
     include_treatment:  bool,
     include_rag_chunks: bool,
+    include_xai:        bool = True,
+    include_rounds:     bool = False,
     unit_corrections:   List[str],
     mrn:                Optional[str],
     db:                 Session,
@@ -234,9 +262,11 @@ def _run_analysis(
     Core analysis pipeline — called by all /analyze endpoints.
     1. Compute BEI (Module A, B, or both)
     2. Build clinical flags
-    3. Persist patient + analysis to database
-    4. Optionally run RAG retrieval + treatment synthesis
-    5. Return AnalysisResponse
+    3. Optionally compute xAI attribution (deterministic — no API)
+    4. Persist patient + analysis to database
+    5. Optionally run RAG retrieval + treatment synthesis
+    6. Optionally run doctor-on-rounds narrative (xAI → Claude API)
+    7. Return AnalysisResponse
     """
     # ── 1. BEI computation ────────────────────────────────────────────────────
     bei:        dict              = compute_bei(raw_input)   # Module A always computed
@@ -255,7 +285,16 @@ def _run_analysis(
     # ── 2. Clinical flags ─────────────────────────────────────────────────────
     flags = build_clinical_flags(bei_primary, raw_input)
 
-    # ── 3. Optionally run treatment synthesis first (before DB write so we
+    # ── 3. xAI attribution (deterministic — no API call) ─────────────────────
+    xai_result: Optional[dict] = None
+    if include_xai:
+        try:
+            xai_data = build_xai_attribution(bei_primary, raw_input)
+            xai_result = {"xai_attribution": xai_data}
+        except Exception as exc:
+            logger.warning("xAI attribution failed (non-fatal): %s", exc)
+
+    # ── 4. Optionally run treatment synthesis first (before DB write so we
     #        can store synthesis_text in one transaction)
     treatment_result: Optional[dict] = None
     rag_chunks:       Optional[List[dict]] = None
@@ -305,7 +344,38 @@ def _run_analysis(
                 detail=f"Treatment synthesis failed: {exc}",
             )
 
-    # ── 4. Persist to database ─────────────────────────────────────────────────
+    # ── 5. Doctor-on-rounds narrative (xAI → Claude API) ─────────────────────
+    if include_rounds and include_xai and xai_result:
+        if not config.ANTHROPIC_API_KEY:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="ANTHROPIC_API_KEY not set — rounds narrative unavailable.",
+            )
+        try:
+            rounds_result = synthesize_rounds_report(
+                data={
+                    "patient_id": external_patient_id,
+                    "bei":        bei_primary,
+                    "raw_input":  raw_input,
+                    "flags":      flags,
+                },
+                api_key=config.ANTHROPIC_API_KEY,
+            )
+            # Merge rounds output into xai_result so _build_analysis_response sees it
+            xai_result.update({
+                "rounds_text": rounds_result.get("rounds_text"),
+                "model_used":  rounds_result.get("model_used"),
+            })
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.error("Rounds narrative failed: %s", exc)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Rounds narrative synthesis failed: {exc}",
+            )
+
+    # ── 6. Persist to database ─────────────────────────────────────────────────
     patient, _ = crud.get_or_create_patient(
         db=db,
         hospital_id=hospital.id,
@@ -327,7 +397,7 @@ def _run_analysis(
         bei_b=bei_b if module in ("B", "both") else None,
     )
 
-    # ── 5. Audit log ───────────────────────────────────────────────────────────
+    # ── 7. Audit log ───────────────────────────────────────────────────────────
     crud.log_audit(
         db=db,
         action=f"analyze_{input_source}",
@@ -351,6 +421,7 @@ def _run_analysis(
         treatment_result=treatment_result,
         rag_chunks=rag_chunks,
         include_rag_chunks=include_rag_chunks,
+        xai_result=xai_result,
     )
 
 
@@ -710,6 +781,8 @@ def analyze_json(
         raw_input=raw_input,
         include_treatment=body.include_treatment,
         include_rag_chunks=body.include_rag_chunks,
+        include_xai=body.include_xai,
+        include_rounds=body.include_rounds,
         unit_corrections=[],
         mrn=body.mrn,
         db=db,
@@ -731,6 +804,8 @@ async def analyze_pdf(
     patient_id:        str        = Form(..., description="Your hospital's patient / admission ID"),
     include_treatment: bool       = Form(True),
     include_rag_chunks: bool      = Form(False),
+    include_xai:       bool       = Form(True,  description="Include xAI attribution block (deterministic — no API call)"),
+    include_rounds:    bool       = Form(False, description="Include doctor-on-rounds narrative (Claude API call)"),
     mrn:               Optional[str] = Form(None),
     module:            str           = Form(
         "A",
@@ -798,6 +873,8 @@ async def analyze_pdf(
         raw_input=raw_input,
         include_treatment=include_treatment,
         include_rag_chunks=include_rag_chunks,
+        include_xai=include_xai,
+        include_rounds=include_rounds,
         unit_corrections=corrections,
         mrn=mrn,
         db=db,

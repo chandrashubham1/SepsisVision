@@ -130,6 +130,22 @@ class AnalysisRequest(BaseModel):
             "'both' = run both engines and return a structured comparison block"
         ),
     )
+    include_xai: bool = Field(
+        True,
+        description=(
+            "If True, include structured xAI attribution block in the response. "
+            "Pure computation — no API call required."
+        ),
+    )
+    include_rounds: bool = Field(
+        False,
+        description=(
+            "If True, generate a doctor-on-rounds narrative via Claude API "
+            "(requires include_xai=True and ANTHROPIC_API_KEY). "
+            "This is the xAI explainability narrative — why the model predicts "
+            "this zone, and what an attending would say on rounds."
+        ),
+    )
 
 
 # ── BEI response models ───────────────────────────────────────────────────────
@@ -187,6 +203,46 @@ class RagChunk(BaseModel):
     year:   Any
 
 
+# ── xAI models ────────────────────────────────────────────────────────────────
+
+class XAIMarkerAttribution(BaseModel):
+    """Per-marker attribution entry from the xAI attribution block."""
+    marker:           str
+    raw_value:        Optional[float]   = None
+    raw_str:          str               = ""
+    energy:           float             = Field(..., description="Normalised energy score [0=failure, 1=homeostasis]")
+    cohort_mean:      float             = Field(..., description="Cohort mean energy for this marker (Davoudian 2023)")
+    deviation:        float             = Field(..., description="energy - cohort_mean; negative = worse than average")
+    deviation_label:  str               = ""
+    weight:           float             = Field(..., description="Entropy-derived weight for this marker")
+    tc:               float             = Field(..., description="Tipping contribution = weight × deviation")
+    tier:             str               = Field(..., description="KILL | MODERATE | NOISE | BENIGN")
+    direction:        str               = Field(..., description="FAILURE | PROTECTIVE")
+    severity:         str               = Field(..., description="CRITICAL | SIGNIFICANT | MILD | NEUTRAL | PROTECTIVE")
+    is_primary:       bool              = Field(False, description="True if this is the primary tipping marker")
+    clinical_context: str               = ""
+
+
+class XAIReport(BaseModel):
+    """
+    Structured xAI output for one BEI analysis.
+
+    marker_attributions is deterministic (pure BEI math).
+    rounds_narrative is Claude-generated (present only if include_rounds=True).
+    """
+    module:              str
+    bei_score:           float
+    bei_zone:            str
+    predicted_outcome:   str   = Field(..., description="Outcome prediction statement grounded in Davoudian 2023 quartile data")
+    zone_confidence:     str   = Field(..., description="Calibration and AUC note")
+    xai_summary:         str   = Field(..., description="2-sentence plain-English explanation of the prediction")
+    n_markers:           int
+    top_driver:          Optional[XAIMarkerAttribution] = None
+    marker_attributions: List[XAIMarkerAttribution]     = Field(default_factory=list)
+    rounds_narrative:    Optional[str] = Field(None, description="Doctor-on-rounds narrative (Claude-generated)")
+    rounds_model_used:   Optional[str] = None
+
+
 class AnalysisResponse(BaseModel):
     patient_id:          str
     analysis_id:         Optional[str] = Field(None, description="UUID of this analysis in the database")
@@ -196,6 +252,7 @@ class AnalysisResponse(BaseModel):
     module_b:            Optional[BEIResult]        = Field(None, description="KILL-4 result (module B or both)")
     comparison:          Optional[ModuleComparison] = Field(None, description="Module A vs B comparison (module=both)")
     treatment:           Optional[TreatmentSynthesis] = None
+    xai_report:          Optional[XAIReport]          = Field(None, description="xAI attribution + rounds narrative")
     rag_chunks:          Optional[List[RagChunk]]     = None
     unit_corrections:    List[str] = Field(default_factory=list)
     clinical_flags:      List[str]
