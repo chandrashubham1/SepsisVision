@@ -942,9 +942,10 @@ async def analyze_narrative_stream(
                 ) as resp:
                     if resp.status_code != 200:
                         err_bytes = await resp.aread()
+                        err_preview = err_bytes[:200].decode(errors="replace")
                         yield (
                             "event: error\n"
-                            f"data: {json.dumps({'error': f'Claude API {resp.status_code}: {err_bytes[:200].decode(errors=\"replace\")}'})}\n\n"
+                            f"data: {json.dumps({'error': f'Claude API {resp.status_code}: {err_preview}'})}\n\n"
                         )
                         return
                     async for line in resp.aiter_lines():
