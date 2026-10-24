@@ -394,6 +394,52 @@ textarea#json-input:focus { border-color: var(--accent); }
   content: ""; flex: 1; height: 1px; background: var(--border);
 }
 
+/* ── Phase progress strip ── */
+.phase-strip {
+  display: flex; gap: 8px; margin-bottom: 16px; align-items: center;
+  font-size: 11px; font-family: var(--mono); color: var(--fg-dim);
+}
+.phase-pip {
+  display: flex; align-items: center; gap: 4px;
+  padding: 3px 9px; border-radius: 20px;
+  border: 1px solid var(--border);
+  white-space: nowrap; transition: all .25s;
+}
+.phase-pip.done  { border-color: var(--ok); color: var(--ok); background: var(--ok-bg); }
+.phase-pip.live  { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+.phase-pip.idle  { opacity: .45; }
+
+/* ── Narrative stream (Phase 3) ── */
+.narrative-card {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 20px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.85;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 520px;
+  overflow-y: auto;
+  color: var(--fg);
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+.stream-cursor {
+  display: inline-block;
+  animation: blink .75s step-end infinite;
+  color: var(--accent);
+  font-weight: 700;
+  margin-left: 1px;
+}
+.phase-status {
+  font-family: var(--mono); font-size: 11px; font-weight: 500;
+  padding: 2px 8px; border-radius: 4px;
+  background: var(--accent-bg); color: var(--accent);
+}
+.phase-status.done  { background: var(--ok-bg);   color: var(--ok); }
+.phase-status.error { background: var(--crit-bg); color: var(--critical); }
+
 /* ── Print styles ── */
 @media print {
   .topbar, .left-panel, .report-actions, .action-btn { display: none !important; }
@@ -552,6 +598,15 @@ textarea#json-input:focus { border-color: var(--accent); }
         </div>
       </div>
 
+      <!-- Three-phase progress strip -->
+      <div class="phase-strip" id="phase-strip" style="display:none">
+        <span class="phase-pip idle" id="pip-bei">① BEI Score</span>
+        <span style="opacity:.3">›</span>
+        <span class="phase-pip idle" id="pip-xai">② xAI Analysis</span>
+        <span style="opacity:.3">›</span>
+        <span class="phase-pip idle" id="pip-narrative">③ Narrative</span>
+      </div>
+
       <!-- BEI Score -->
       <div class="score-band" id="score-band">
         <div>
@@ -601,6 +656,17 @@ textarea#json-input:focus { border-color: var(--accent); }
       <div id="icd-section" style="margin-top:20px">
         <div class="section-title">ICD-10-CM Codes</div>
         <div class="icd-section" id="icd-content"></div>
+      </div>
+
+      <!-- Phase 3: Clinical Narrative (streaming) -->
+      <div id="narrative-section" style="margin-top:24px;display:none">
+        <div class="section-title" style="display:flex;align-items:center;gap:10px">
+          Clinical Narrative
+          <span class="phase-status" id="narrative-status">● Streaming…</span>
+        </div>
+        <div class="narrative-card" id="narrative-card">
+          <span id="narrative-text"></span><span class="stream-cursor" id="stream-cursor">▌</span>
+        </div>
       </div>
 
     </div><!-- #results -->
@@ -774,6 +840,12 @@ async function runAnalysis() {
   const apiBase = document.getElementById('api-url').value.replace(/\/$/, '');
   const apiKey  = document.getElementById('api-key').value.trim();
 
+  // Reset phase UI for fresh run
+  document.getElementById('phase-strip').style.display  = 'none';
+  document.getElementById('narrative-section').style.display = 'none';
+  ['bei','xai','narrative'].forEach(id => setPip(id, 'idle'));
+  setPip('bei', 'live');
+
   const btn = document.getElementById('analyze-btn');
   btn.disabled = true;
   btn.classList.add('loading');
@@ -806,13 +878,134 @@ async function runAnalysis() {
     }
 
     lastResult = data;
+
+    // Phase 1+2: render BEI + xAI immediately (no API call)
+    setPip('bei',  'done');
+    setPip('xai',  'done');
+    setPip('narrative', 'live');
     renderResults(data, payload);
+
+    // Phase 3: stream narrative from Claude (separate, non-blocking)
+    runNarrativeStream(payload, apiBase, apiKey);
 
   } catch(err) {
     showError('Network error: ' + err.message + '\n\nIs the server running at ' + apiBase + '?');
   } finally {
     btn.disabled = false;
     btn.classList.remove('loading');
+  }
+}
+
+// ── Phase pip helper ──
+function setPip(id, state /* 'idle'|'live'|'done' */) {
+  const el = document.getElementById('pip-' + id);
+  if (!el) return;
+  el.className = 'phase-pip ' + state;
+  if (state === 'live') el.style.animation = 'blink 1s step-end infinite';
+  else el.style.animation = '';
+}
+
+// ── Phase 3: streaming narrative ──────────────────────────────────────────────
+async function runNarrativeStream(payload, apiBase, apiKey) {
+  const section  = document.getElementById('narrative-section');
+  const textEl   = document.getElementById('narrative-text');
+  const cursorEl = document.getElementById('stream-cursor');
+  const statusEl = document.getElementById('narrative-status');
+
+  // Reset state
+  textEl.textContent  = '';
+  cursorEl.style.display = 'inline-block';
+  statusEl.textContent = '● Streaming…';
+  statusEl.className   = 'phase-status';
+  section.style.display = 'block';
+
+  // Show phase strip
+  document.getElementById('phase-strip').style.display = 'flex';
+
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (apiKey) headers['X-API-Key'] = apiKey;
+
+    const resp = await fetch(apiBase + '/analyze/narrative/stream', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    });
+
+    if (!resp.ok || !resp.body) {
+      const errText = await resp.text();
+      textEl.textContent = '[Stream error ' + resp.status + '] ' + errText.slice(0, 300);
+      statusEl.textContent = '✕ Error';
+      statusEl.className = 'phase-status error';
+      cursorEl.style.display = 'none';
+      setPip('narrative', 'idle');
+      return;
+    }
+
+    const reader  = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    let lastEvent = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+
+      // Process complete SSE lines
+      const lines = buf.split('\n');
+      buf = lines.pop(); // keep incomplete last line
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) { lastEvent = ''; continue; }
+
+        if (trimmed.startsWith('event: ')) {
+          lastEvent = trimmed.slice(7).trim();
+          continue;
+        }
+        if (trimmed.startsWith('data: ')) {
+          const payload_str = trimmed.slice(6);
+          if (payload_str === '{}' && lastEvent === 'done') {
+            // Stream complete
+            cursorEl.style.display = 'none';
+            statusEl.textContent = '✓ Done';
+            statusEl.className = 'phase-status done';
+            setPip('narrative', 'done');
+            continue;
+          }
+          try {
+            const evt = JSON.parse(payload_str);
+            if (lastEvent === 'bei') {
+              // Phase 1 BEI data already rendered — ignore duplicate
+            } else if (lastEvent === 'token') {
+              textEl.textContent += evt.text || '';
+              // Auto-scroll narrative card
+              const card = document.getElementById('narrative-card');
+              card.scrollTop = card.scrollHeight;
+            } else if (lastEvent === 'error') {
+              textEl.textContent += '\n[Error: ' + (evt.error || 'unknown') + ']';
+              cursorEl.style.display = 'none';
+              statusEl.textContent = '✕ Error';
+              statusEl.className = 'phase-status error';
+              setPip('narrative', 'idle');
+            } else if (lastEvent === 'done') {
+              cursorEl.style.display = 'none';
+              statusEl.textContent = '✓ Done';
+              statusEl.className = 'phase-status done';
+              setPip('narrative', 'done');
+            }
+          } catch(_) { /* skip malformed line */ }
+        }
+      }
+    }
+
+  } catch(err) {
+    textEl.textContent = '[Connection error] ' + err.message;
+    cursorEl.style.display = 'none';
+    statusEl.textContent = '✕ Error';
+    statusEl.className = 'phase-status error';
+    setPip('narrative', 'idle');
   }
 }
 

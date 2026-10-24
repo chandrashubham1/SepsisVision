@@ -21,7 +21,8 @@ from fastapi import (
     Request, UploadFile, status,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+import httpx
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
@@ -60,7 +61,7 @@ from models import (
 )
 from rag_retrieval import RagRetriever
 from treatment import synthesize_treatment
-from xai_engine import build_xai_attribution, synthesize_rounds_report
+from xai_engine import build_rounds_prompt, build_xai_attribution, synthesize_rounds_report
 
 logging.basicConfig(
     level=logging.INFO,
@@ -856,6 +857,127 @@ def analyze_json(
         db=db,
         input_source="json",
         module=body.module.value,
+    )
+
+
+# ── Analysis: Narrative stream (SSE) ──────────────────────────────────────────
+
+@app.post(
+    "/analyze/narrative/stream",
+    tags=["Analysis"],
+    summary="Stream a clinical narrative token-by-token from Claude",
+)
+async def analyze_narrative_stream(
+    body:     AnalysisRequest,
+    request:  Request,
+    hospital: Hospital = Depends(get_current_hospital),
+):
+    """
+    Three-phase streaming endpoint.
+
+    **Phase 1** (immediate, < 100 ms): BEI score + clinical flags
+      → emitted as ``event: bei`` before the first Claude token.
+
+    **Phase 2** (deterministic, no API): xAI attribution
+      → included in the ``bei`` event payload.
+
+    **Phase 3** (streaming, Claude API): doctor-on-rounds narrative
+      → token-by-token as ``event: token`` Server-Sent Events.
+
+    Final ``event: done`` signals stream completion.
+    ``event: error`` carries ``{"error": "..."}`` on failure.
+    """
+    module    = body.module.value if hasattr(body.module, "value") else str(body.module)
+    raw_input = body.biomarkers.to_raw_dict()
+    pid       = body.biomarkers.patient_id or "UNKNOWN"
+
+    if not raw_input:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="At least one biomarker value is required.",
+        )
+
+    # ── Phase 1 + 2: local computation (no DB, no API) ─────────────────────────
+    bei: dict          = compute_bei(raw_input)
+    bei_b: Optional[dict] = None
+    if module in ("B", "both"):
+        bei_b = compute_bei_b(raw_input)
+    bei_primary = bei_b if module == "B" else bei
+
+    flags = build_clinical_flags(bei_primary, raw_input)
+    xai   = build_xai_attribution(bei_primary, raw_input)
+    prompt = build_rounds_prompt(bei_primary, raw_input, xai, pid=pid, flags=flags)
+
+    async def event_stream():
+        # Emit BEI + xAI immediately (Phase 1 + 2)
+        yield (
+            "event: bei\n"
+            f"data: {json.dumps({'bei': bei_primary, 'xai': xai, 'flags': flags, 'patient_id': pid})}\n\n"
+        )
+
+        # Phase 3: stream narrative from Claude
+        if not config.ANTHROPIC_API_KEY:
+            yield (
+                "event: error\n"
+                f"data: {json.dumps({'error': 'ANTHROPIC_API_KEY not set — narrative unavailable'})}\n\n"
+            )
+            return
+
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                async with client.stream(
+                    "POST",
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "Content-Type":      "application/json",
+                        "x-api-key":         config.ANTHROPIC_API_KEY,
+                        "anthropic-version": "2023-06-01",
+                    },
+                    json={
+                        "model":      config.CLAUDE_MODEL,
+                        "max_tokens": config.CLAUDE_MAX_TOKENS,
+                        "stream":     True,
+                        "messages":   [{"role": "user", "content": prompt}],
+                    },
+                ) as resp:
+                    if resp.status_code != 200:
+                        err_bytes = await resp.aread()
+                        yield (
+                            "event: error\n"
+                            f"data: {json.dumps({'error': f'Claude API {resp.status_code}: {err_bytes[:200].decode(errors=\"replace\")}'})}\n\n"
+                        )
+                        return
+                    async for line in resp.aiter_lines():
+                        if not line:
+                            continue
+                        if line.startswith("data: "):
+                            payload = line[6:]
+                            if payload.strip() == "[DONE]":
+                                break
+                            try:
+                                evt = json.loads(payload)
+                                if evt.get("type") == "content_block_delta":
+                                    delta = evt.get("delta", {})
+                                    if delta.get("type") == "text_delta":
+                                        text = delta.get("text", "")
+                                        if text:
+                                            yield f"event: token\ndata: {json.dumps({'text': text})}\n\n"
+                            except json.JSONDecodeError:
+                                pass
+        except Exception as exc:
+            logger.error("Narrative stream error: %s", exc)
+            yield f"event: error\ndata: {json.dumps({'error': str(exc)})}\n\n"
+
+        yield "event: done\ndata: {}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control":     "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection":        "keep-alive",
+        },
     )
 
 
