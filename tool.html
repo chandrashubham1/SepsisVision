@@ -760,7 +760,7 @@ async function runAnalysis() {
     // Flatten markers + patient_id into the biomarkers object
     payload = {
       biomarkers: Object.assign({ patient_id: payload.patient_id || 'UNKNOWN' }, payload.markers),
-      include_treatment: true,
+      include_treatment: false,   // RAG/Claude synthesis disabled until ChromaDB is loaded
       include_xai:       payload.include_xai !== false,
       module:            payload.module || currentModule,
     };
@@ -768,7 +768,7 @@ async function runAnalysis() {
     // Already in native shape — just fill defaults
     if (!payload.module)               payload.module            = currentModule;
     if (payload.include_xai === undefined) payload.include_xai   = true;
-    if (payload.include_treatment === undefined) payload.include_treatment = true;
+    if (payload.include_treatment === undefined) payload.include_treatment = false;
   }
 
   const apiBase = document.getElementById('api-url').value.replace(/\/$/, '');
