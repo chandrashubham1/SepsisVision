@@ -434,43 +434,52 @@ def _run_analysis(
                 detail=f"Rounds narrative synthesis failed: {exc}",
             )
 
-    # ── 6. Persist to database ─────────────────────────────────────────────────
-    patient, _ = crud.get_or_create_patient(
-        db=db,
-        hospital_id=hospital.id,
-        external_patient_id=external_patient_id,
-        mrn=mrn,
-    )
-    db_analysis = crud.create_analysis(
-        db=db,
-        patient=patient,
-        hospital_id=hospital.id,
-        bei=bei_primary,
-        raw_input=raw_input,
-        unit_corrections=unit_corrections,
-        clinical_flags=flags,
-        treatment_result=treatment_result,
-        input_source=input_source,
-        pdf_filename=pdf_filename,
-        module=module.upper(),
-        bei_b=bei_b if module in ("B", "both") else None,
-    )
+    # ── 6. Persist to database (non-fatal when no DB is available) ────────────
+    db_analysis_id:       Optional[str] = None
+    internal_patient_id_: Optional[str] = None
+    try:
+        patient, _ = crud.get_or_create_patient(
+            db=db,
+            hospital_id=hospital.id,
+            external_patient_id=external_patient_id,
+            mrn=mrn,
+        )
+        db_analysis = crud.create_analysis(
+            db=db,
+            patient=patient,
+            hospital_id=hospital.id,
+            bei=bei_primary,
+            raw_input=raw_input,
+            unit_corrections=unit_corrections,
+            clinical_flags=flags,
+            treatment_result=treatment_result,
+            input_source=input_source,
+            pdf_filename=pdf_filename,
+            module=module.upper(),
+            bei_b=bei_b if module in ("B", "both") else None,
+        )
+        db_analysis_id       = db_analysis.id
+        internal_patient_id_ = patient.id
 
-    # ── 7. Audit log ───────────────────────────────────────────────────────────
-    crud.log_audit(
-        db=db,
-        action=f"analyze_{input_source}",
-        hospital_id=hospital.id,
-        analysis_id=db_analysis.id,
-        patient_id=patient.id,
-        ip_address=_get_client_ip(request),
-        status_code=200,
-    )
+        # ── 7. Audit log ───────────────────────────────────────────────────────
+        crud.log_audit(
+            db=db,
+            action=f"analyze_{input_source}",
+            hospital_id=hospital.id,
+            analysis_id=db_analysis_id,
+            patient_id=internal_patient_id_,
+            ip_address=_get_client_ip(request),
+            status_code=200,
+        )
+    except Exception as _db_exc:
+        logger.warning(
+            "Database persistence skipped (non-fatal — no DB connection?): %s", _db_exc
+        )
 
     return _build_analysis_response(
         patient_id=external_patient_id,
-        analysis_id=db_analysis.id,
-        internal_patient_id=patient.id,
+        analysis_id=db_analysis_id,
+        internal_patient_id=internal_patient_id_,
         module=module,
         bei=bei_primary,
         bei_b=bei_b if module == "both" else None,
