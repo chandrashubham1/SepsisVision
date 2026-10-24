@@ -126,6 +126,84 @@ _CLINICAL_REFS: Dict[str, tuple] = {
 }
 
 
+# ── ICD-10-CM code associations ───────────────────────────────────────────────
+# _MARKER_ICD    : primary ICD codes for the condition each elevated/depressed marker signals
+# _PHENOTYPE_ICD : documentation codes per phenotype classification
+# _RULE_ICD      : coding decision codes keyed by "{rule_id}_{status}"
+#   — For TRIGGERED rules: what CAN be coded (with conditions where noted)
+#   — For PASS rules: the differential that has been effectively ruled out or narrowed
+
+_MARKER_ICD: Dict[str, List[tuple]] = {
+    # (ICD-10-CM code, description)
+    "D-dimer":    [("D65",    "Disseminated intravascular coagulation"),
+                   ("A41.9",  "Sepsis, unspecified organism")],
+    "Platelets":  [("D69.6",  "Thrombocytopenia, unspecified"),
+                   ("D65",    "Disseminated intravascular coagulation")],
+    "CRP":        [("R65.11", "SIRS with acute organ dysfunction"),
+                   ("A41.9",  "Sepsis, unspecified organism")],
+    "IL-6":       [("D89.839","Cytokine release syndrome, unspecified grade"),
+                   ("A41.9",  "Sepsis, unspecified organism")],
+    "IL-8":       [("A41.9",  "Sepsis, unspecified organism")],
+    "IL-10":      [("D89.839","Cytokine release syndrome, unspecified grade")],
+    "PTX3":       [("A41.9",  "Sepsis, unspecified organism")],
+    "TNF-alpha":  [("D89.839","Cytokine release syndrome, unspecified grade")],
+    "IL-18":      [("D89.839","Cytokine release syndrome, unspecified grade")],
+    "sIL-1R2":    [("D89.839","Cytokine release syndrome, unspecified grade")],
+    "IL-1ra":     [("D89.839","Cytokine release syndrome, unspecified grade")],
+    "Creatinine": [("N17.9",  "Acute kidney injury, unspecified"),
+                   ("N18.9",  "Chronic kidney disease, unspecified")],
+    "Urea":       [("N17.9",  "Acute kidney injury, unspecified"),
+                   ("R79.89", "Other specified abnormal findings of blood chemistry")],
+    "SOFA":       [("R65.20", "Severe sepsis without septic shock"),
+                   ("R65.21", "Severe sepsis with septic shock")],
+    "MAP":        [("R57.2",  "Septic shock"),
+                   ("I95.9",  "Hypotension, unspecified")],
+    "Lactate":    [("E87.2",  "Acidosis"),
+                   ("R57.2",  "Septic shock")],
+    "PaO2_FiO2":  [("J96.01", "Acute respiratory failure with hypoxia"),
+                   ("J80",    "Acute respiratory distress syndrome")],
+    "GCS":        [("G93.40", "Encephalopathy, unspecified"),
+                   ("R41.3",  "Other amnesia / altered consciousness")],
+}
+
+_PHENOTYPE_ICD: Dict[str, List[tuple]] = {
+    "HYPERINFLAMMATORY": [
+        ("D89.839", "Cytokine release syndrome, unspecified grade"),
+        ("R65.11",  "SIRS with acute organ dysfunction"),
+        ("A41.9",   "Sepsis, unspecified organism"),
+    ],
+    "IMMUNOPARALYSIS": [
+        ("D84.9",  "Immunodeficiency, unspecified"),
+        ("A41.9",  "Sepsis, unspecified organism"),
+        ("R65.20", "Severe sepsis without septic shock"),
+    ],
+    "MIXED / TRANSITIONAL": [
+        ("A41.9",   "Sepsis, unspecified organism"),
+        ("R65.20",  "Severe sepsis without septic shock"),
+        ("D89.839", "Cytokine release syndrome, unspecified grade"),
+    ],
+    "INDETERMINATE": [
+        ("A41.9",  "Sepsis, unspecified organism"),
+    ],
+}
+
+_RULE_ICD: Dict[str, List[tuple]] = {
+    # Triggered = condition applies or requires additional criteria before coding
+    # Pass = differential that is excluded or narrowed for this patient
+    "R1_TRIGGERED": [("M62.50", "Muscle wasting and atrophy, unspecified"),
+                     ("R79.89", "Other specified abnormal findings of blood chemistry")],
+    "R1_PASS":      [("N17.9",  "Acute kidney injury, unspecified")],
+    "R2_TRIGGERED": [("D89.839","Cytokine release syndrome — corticosteroids contraindicated")],
+    "R2_PASS":      [],
+    "R3_TRIGGERED": [("D65",    "DIC — ISTH DIC score ≥5 required before assigning this code")],
+    "R3_INDETERMINATE": [("D65","DIC — suspected; obtain ISTH score before coding")],
+    "R3_PASS":      [],
+    "R4_PASS":      [("N17.9",  "AKI — CRRT per KDIGO criteria, not urea threshold alone")],
+    "R5_TRIGGERED": [("M62.50", "Muscle wasting — protein ≥1.5 g/kg/day required")],
+    "R5_PASS":      [],
+}
+
+
 def _ref_deviation_label(marker: str, raw_val) -> str:
     """Return a short label showing deviation from clinical reference range."""
     if raw_val is None:
@@ -172,31 +250,33 @@ def evaluate_hard_rules(raw: Dict[str, Any], ep: Dict[str, float]) -> List[dict]
     catabolic = uc_ratio > 150
 
     rules.append({
-        "rule_id": "R1",
-        "name":    "U:Cr Catabolism (not AKI)",
-        "status":  "TRIGGERED" if catabolic else "PASS",
-        "detail":  (
+        "rule_id":  "R1",
+        "name":     "U:Cr Catabolism (not AKI)",
+        "status":   "TRIGGERED" if catabolic else "PASS",
+        "detail":   (
             f"U:Cr={uc_ratio} >150 → CATABOLIC HYPERUREAEMIA. "
             "Lead with proteolysis, not renal failure. "
             "Do NOT frame as AKI-first."
             if catabolic else
             f"U:Cr={uc_ratio} — AKI-predominant pattern. Renal-first approach appropriate."
         ),
+        "icd_codes": _RULE_ICD.get(f"R1_{'TRIGGERED' if catabolic else 'PASS'}", []),
     })
 
     # ── Rule 2: IL-10 energy → steroid contraindication ──────────────────────
     il10_e  = ep.get("IL-10", 0.0)
     steroids_ci = il10_e > 0.70
     rules.append({
-        "rule_id": "R2",
-        "name":    "IL-10 / Steroid Contraindication",
-        "status":  "TRIGGERED" if steroids_ci else "PASS",
-        "detail":  (
+        "rule_id":  "R2",
+        "name":     "IL-10 / Steroid Contraindication",
+        "status":   "TRIGGERED" if steroids_ci else "PASS",
+        "detail":   (
             f"IL-10 energy={il10_e:.4f} >0.70 → Corticosteroids CONTRAINDICATED. "
             "Anti-inflammatory reserve intact; steroids increase secondary infection risk."
             if steroids_ci else
             f"IL-10 energy={il10_e:.4f} — Steroid candidacy: individual haemodynamic assessment required."
         ),
+        "icd_codes": _RULE_ICD.get(f"R2_{'TRIGGERED' if steroids_ci else 'PASS'}", []),
     })
 
     # ── Rule 3: DIC — ISTH score required (D-dimer alone is insufficient) ────
@@ -218,37 +298,40 @@ def evaluate_hard_rules(raw: Dict[str, Any], ep: Dict[str, float]) -> List[dict]
         r3_status = "PASS"
         r3_detail = f"D-dimer={ddimer:.0f} ng/mL — DIC threshold not reached on current data."
     rules.append({
-        "rule_id": "R3",
-        "name":    "DIC — ISTH Score Required",
-        "status":  r3_status,
-        "detail":  r3_detail,
+        "rule_id":  "R3",
+        "name":     "DIC — ISTH Score Required",
+        "status":   r3_status,
+        "detail":   r3_detail,
+        "icd_codes": _RULE_ICD.get(f"R3_{r3_status}", []),
     })
 
     # ── Rule 4: CRRT indication per KDIGO (Urea alone is NOT sufficient) ─────
     rules.append({
-        "rule_id": "R4",
-        "name":    "CRRT per KDIGO (not Urea target)",
-        "status":  "PASS",
-        "detail":  (
+        "rule_id":  "R4",
+        "name":     "CRRT per KDIGO (not Urea target)",
+        "status":   "PASS",
+        "detail":   (
             f"Urea={urea} mmol/L — CRRT requires KDIGO criteria: "
             "refractory fluid overload, pH <7.15, K⁺ >6.5, uraemic complications, "
             "or vasopressor-refractory instability. "
             "Urea level alone is NOT an indication."
         ),
+        "icd_codes": _RULE_ICD.get("R4_PASS", []),
     })
 
     # ── Rule 5: Protein target (driven by Rule 1 result) ─────────────────────
     rules.append({
-        "rule_id": "R5",
-        "name":    "Protein Target (catabolic adjustment)",
-        "status":  "TRIGGERED" if catabolic else "PASS",
-        "detail":  (
+        "rule_id":  "R5",
+        "name":     "Protein Target (catabolic adjustment)",
+        "status":   "TRIGGERED" if catabolic else "PASS",
+        "detail":   (
             f"U:Cr={uc_ratio} (catabolic) → Protein ≥1.5 g/kg/day (ESPEN 2019, Heyland 2011). "
             "Do NOT restrict to 0.8–1.2 g/kg/day — protein restriction in catabolic sepsis "
             "accelerates muscle wasting and INCREASES mortality."
             if catabolic else
             f"U:Cr={uc_ratio} — Standard protein 1.2–1.5 g/kg/day. Monitor renal tolerance."
         ),
+        "icd_codes": _RULE_ICD.get(f"R5_{'TRIGGERED' if catabolic else 'PASS'}", []),
     })
 
     return rules
@@ -284,6 +367,7 @@ def classify_phenotype(raw: Dict[str, Any], ep: Dict[str, float]) -> dict:
             "confidence":           "LOW (SOFA <6)",
             "evidence":             [f"SOFA={sofa_val:.0f} — insufficient severity for SRS phenotyping"],
             "clinical_implications": ["Phenotype classification requires SOFA ≥6"],
+            "icd_codes":            _PHENOTYPE_ICD.get("INDETERMINATE", []),
         }
 
     # IMMUNOPARALYSIS: markedly elevated raw IL-10 (>50 pg/mL) — immune exhaustion signal
@@ -347,6 +431,7 @@ def classify_phenotype(raw: Dict[str, Any], ep: Dict[str, float]) -> dict:
         "confidence":           confidence,
         "evidence":             evidence,
         "clinical_implications": implications,
+        "icd_codes":            _PHENOTYPE_ICD.get(phenotype, []),
     }
 
 
@@ -434,6 +519,7 @@ def build_xai_attribution(bei: dict, raw: Dict[str, Any]) -> dict:
             "clinical_context": _MARKER_CLINICAL_CONTEXT.get(marker, ""),
             "system_group":    SYSTEM_GROUPS.get(marker, "OTHER"),
             "ref_deviation":   _ref_deviation_label(marker, raw_val),
+            "icd_codes":       _MARKER_ICD.get(marker, []),
         })
 
     # Sort: most negative TC first (worst drivers at top)
@@ -536,10 +622,14 @@ def format_xai_for_prompt(xai: dict, max_markers: int = 17) -> str:
         pstatus = ph.get("phenotype", "UNKNOWN")
         psub    = ph.get("subtype", "")
         pconf   = ph.get("confidence", "")
+        ph_icd = ph.get("icd_codes", [])
+        icd_str = "  ·  ".join(f"{c}  {d}" for c, d in ph_icd) if ph_icd else ""
         lines += [
             "┌─ IMMUNE PHENOTYPE ─────────────────────────────────────────────────────────",
             f"│  {pstatus}  ({psub})   Confidence: {pconf}",
         ]
+        if icd_str:
+            lines.append(f"│  ICD-10   : {icd_str}")
         for ev in ph.get("evidence", []):
             lines.append(f"│  Evidence  : {ev}")
         for imp in ph.get("clinical_implications", []):
@@ -557,6 +647,10 @@ def format_xai_for_prompt(xai: dict, max_markers: int = 17) -> str:
             )
             lines.append(f"│  [{r['rule_id']}] {status_icon}  {r['name']}")
             lines.append(f"│           {r['detail']}")
+            rule_icd = r.get("icd_codes", [])
+            if rule_icd:
+                rule_icd_str = "  ·  ".join(f"{c}  {d}" for c, d in rule_icd)
+                lines.append(f"│           ICD-10 : {rule_icd_str}")
         lines.append("└───────────────────────────────────────────────────────────────────────────")
         lines.append("")
 
@@ -594,6 +688,10 @@ def format_xai_for_prompt(xai: dict, max_markers: int = 17) -> str:
                 f"│  {a['marker']:<14} {a['tc']:>+9.5f}  {a['energy']:>7.4f}  "
                 f"{a['severity']:<12}  {sys:<15}  {raw_display:<12}  {ref_dev}{primary_flag}"
             )
+            if a["is_primary"]:
+                m_icd = a.get("icd_codes", [])
+                if m_icd:
+                    lines.append(f"│    ↳ ICD-10: {'  ·  '.join(c for c, _ in m_icd)}")
 
     # Any markers not in _SYSTEM_ORDER
     for sys, group in sys_map.items():
@@ -607,6 +705,10 @@ def format_xai_for_prompt(xai: dict, max_markers: int = 17) -> str:
                     f"│  {a['marker']:<14} {a['tc']:>+9.5f}  {a['energy']:>7.4f}  "
                     f"{a['severity']:<12}  {sys:<15}  {raw_display:<12}  {ref_dev}{primary_flag}"
                 )
+                if a["is_primary"]:
+                    m_icd = a.get("icd_codes", [])
+                    if m_icd:
+                        lines.append(f"│    ↳ ICD-10: {'  ·  '.join(c for c, _ in m_icd)}")
 
     lines.append("│")
     lines.append(f"│  OUTCOME: {xai['predicted_outcome']}")
