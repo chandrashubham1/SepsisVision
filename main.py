@@ -131,6 +131,16 @@ def root() -> HTMLResponse:
     return HTMLResponse(content=_LANDING_HTML)
 
 
+# ── Analysis tool page ────────────────────────────────────────────────────────
+_TOOL_HTML: str = (_pathlib.Path(__file__).parent / "tool.html").read_text()
+
+
+@app.get("/tool", response_class=HTMLResponse, include_in_schema=False)
+def tool_page() -> HTMLResponse:
+    """Serve the BEI Analysis Tool UI."""
+    return HTMLResponse(content=_TOOL_HTML)
+
+
 # Serve static assets (Sutra logo, etc.)
 _static_dir = _pathlib.Path(__file__).parent / "static"
 if _static_dir.is_dir():

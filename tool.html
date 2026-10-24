@@ -1,0 +1,1036 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SepsisAI — BEI Analysis Tool</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root {
+  --bg:       #ffffff;
+  --bg-soft:  #f0f9ff;
+  --bg-card:  #ffffff;
+  --border:   #e2e8f0;
+  --border-a: #bae6fd;
+  --fg:       #0f172a;
+  --fg-mid:   #475569;
+  --fg-dim:   #94a3b8;
+  --accent:   #0284c7;
+  --accent-d: #0369a1;
+  --accent-bg:#e0f2fe;
+  --warn:     #b45309;
+  --warn-bg:  #fffbeb;
+  --critical: #dc2626;
+  --crit-bg:  #fef2f2;
+  --ok:       #16a34a;
+  --ok-bg:    #f0fdf4;
+  --amber:    #d97706;
+  --amber-bg: #fffbeb;
+  --code-bg:  #0f172a;
+  --sans: 'DM Sans', system-ui, sans-serif;
+  --mono: 'IBM Plex Mono', 'Courier New', monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#0f172a;--bg-soft:#1e293b;--bg-card:#1e293b;--border:#334155;
+    --border-a:#0369a1;--fg:#f1f5f9;--fg-mid:#94a3b8;--fg-dim:#475569;
+    --accent:#38bdf8;--accent-d:#7dd3fc;--accent-bg:#0c4a6e;
+    --warn:#fbbf24;--warn-bg:#1c1407;--critical:#f87171;--crit-bg:#1c0606;
+    --ok:#4ade80;--ok-bg:#052e16;--amber:#fbbf24;--amber-bg:#1c1407;
+    --code-bg:#020617; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#0f172a;--bg-soft:#1e293b;--bg-card:#1e293b;--border:#334155;
+  --border-a:#0369a1;--fg:#f1f5f9;--fg-mid:#94a3b8;--fg-dim:#475569;
+  --accent:#38bdf8;--accent-d:#7dd3fc;--accent-bg:#0c4a6e;
+  --warn:#fbbf24;--warn-bg:#1c1407;--critical:#f87171;--crit-bg:#1c0606;
+  --ok:#4ade80;--ok-bg:#052e16;--amber:#fbbf24;--amber-bg:#1c1407;
+  --code-bg:#020617; color-scheme:dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.55;
+  background: var(--bg);
+  color: var(--fg);
+  display: flex;
+  flex-direction: column;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Topbar ── */
+.topbar {
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+  position: sticky; top: 0; z-index: 20;
+}
+.topbar-logo {
+  display: flex; align-items: center; gap: 8px;
+  text-decoration: none; color: inherit;
+}
+.logo-icon {
+  width: 30px; height: 30px; background: var(--accent-bg);
+  border-radius: 7px; display: flex; align-items: center; justify-content: center;
+}
+.brand-name { font-size: 14px; font-weight: 600; }
+.brand-sep  { color: var(--fg-dim); }
+.page-title { font-size: 14px; font-weight: 500; color: var(--fg-mid); }
+.topbar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.topbar-link {
+  font-family: var(--mono); font-size: 11px; color: var(--fg-dim);
+  text-decoration: none; padding: 5px 10px; border-radius: 5px;
+  border: 1px solid transparent; transition: all 0.12s;
+}
+.topbar-link:hover { background: var(--bg-soft); border-color: var(--border); color: var(--fg); }
+
+/* ── Main layout ── */
+.layout {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Left panel ── */
+.left-panel {
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 20px 20px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.panel-section { display: flex; flex-direction: column; gap: 8px; }
+.panel-label {
+  font-family: var(--mono); font-size: 10.5px; font-weight: 500;
+  color: var(--fg-dim); letter-spacing: 0.09em; text-transform: uppercase;
+}
+
+/* Module toggle */
+.module-toggle {
+  display: grid; grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+}
+.module-btn {
+  padding: 9px 12px; border: none; background: transparent; cursor: pointer;
+  font-family: var(--sans); font-size: 13px; font-weight: 500;
+  color: var(--fg-mid); transition: all 0.12s; text-align: center;
+}
+.module-btn.active {
+  background: var(--accent); color: #fff;
+}
+.module-btn:not(.active):hover { background: var(--bg-soft); }
+.module-desc {
+  font-family: var(--mono); font-size: 11px; color: var(--fg-dim); line-height: 1.6;
+  padding: 8px 10px; background: var(--bg-soft);
+  border: 1px solid var(--border); border-radius: 6px;
+}
+
+/* API config */
+.input-row { display: flex; flex-direction: column; gap: 4px; }
+.input-label {
+  font-size: 11.5px; font-weight: 500; color: var(--fg-mid);
+}
+input[type="text"], input[type="password"] {
+  width: 100%; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg-card); color: var(--fg);
+  font-family: var(--mono); font-size: 12px;
+  transition: border-color 0.12s;
+  outline: none;
+}
+input[type="text"]:focus, input[type="password"]:focus {
+  border-color: var(--accent);
+}
+
+/* JSON input area */
+.drop-zone {
+  border: 2px dashed var(--border); border-radius: 8px;
+  padding: 14px; text-align: center; cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  color: var(--fg-dim); font-size: 13px;
+}
+.drop-zone.drag-over, .drop-zone:hover {
+  border-color: var(--accent); background: var(--accent-bg);
+}
+.drop-zone svg { margin-bottom: 4px; opacity: 0.5; }
+.drop-inner { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.drop-hint { font-size: 11px; color: var(--fg-dim); }
+
+textarea#json-input {
+  width: 100%; min-height: 280px; max-height: 400px;
+  padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--code-bg); color: #e2e8f0;
+  font-family: var(--mono); font-size: 11.5px; line-height: 1.65;
+  resize: vertical; outline: none;
+  transition: border-color 0.12s;
+}
+textarea#json-input:focus { border-color: var(--accent); }
+
+.template-row { display: flex; gap: 8px; }
+.tmpl-btn {
+  flex: 1; padding: 7px 8px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg-card); color: var(--fg-mid);
+  font-family: var(--mono); font-size: 11px; cursor: pointer;
+  transition: all 0.12s; text-align: center;
+}
+.tmpl-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+
+/* Analyze button */
+.analyze-btn {
+  width: 100%; padding: 12px;
+  background: var(--accent); color: #fff;
+  border: none; border-radius: 8px;
+  font-family: var(--sans); font-size: 14px; font-weight: 600;
+  cursor: pointer; transition: background 0.12s;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.analyze-btn:hover { background: var(--accent-d); }
+.analyze-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.spinner {
+  display: none; width: 16px; height: 16px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff; border-radius: 50%;
+  animation: spin 0.65s linear infinite;
+}
+.analyze-btn.loading .spinner { display: block; }
+.analyze-btn.loading .btn-text { opacity: 0.7; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.error-msg {
+  display: none; padding: 10px 12px;
+  background: var(--crit-bg); border: 1px solid #fecaca;
+  border-radius: 6px; color: var(--critical);
+  font-family: var(--mono); font-size: 11.5px; line-height: 1.6;
+}
+.error-msg.show { display: block; }
+
+/* ── Right panel ── */
+.right-panel {
+  overflow-y: auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* Empty state */
+.empty-state {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 12px; color: var(--fg-dim); text-align: center;
+  min-height: 400px;
+}
+.empty-state svg { opacity: 0.25; }
+.empty-state h3 { margin: 0; font-size: 16px; font-weight: 500; color: var(--fg-mid); }
+.empty-state p { margin: 0; font-size: 13px; max-width: 34ch; line-height: 1.6; }
+
+/* Results */
+#results { display: none; flex-direction: column; gap: 20px; }
+#results.show { display: flex; }
+
+/* Report header */
+.report-header {
+  display: flex; align-items: flex-start;
+  justify-content: space-between; flex-wrap: wrap; gap: 12px;
+  padding-bottom: 16px; border-bottom: 1px solid var(--border);
+}
+.report-title { font-size: 18px; font-weight: 600; margin: 0; }
+.report-meta {
+  font-family: var(--mono); font-size: 11px; color: var(--fg-dim);
+  line-height: 1.8; margin-top: 4px;
+}
+.report-actions { display: flex; gap: 8px; }
+.action-btn {
+  padding: 7px 14px; border-radius: 6px;
+  font-family: var(--mono); font-size: 11.5px; font-weight: 500;
+  cursor: pointer; border: 1px solid var(--border);
+  background: var(--bg-card); color: var(--fg-mid); transition: all 0.12s;
+  display: flex; align-items: center; gap: 5px;
+}
+.action-btn:hover { border-color: var(--accent); color: var(--accent); }
+.action-btn.primary {
+  background: var(--accent); color: #fff; border-color: var(--accent);
+}
+.action-btn.primary:hover { background: var(--accent-d); border-color: var(--accent-d); }
+
+/* Score band */
+.score-band {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 20px; align-items: center;
+  padding: 20px 24px; border-radius: 12px;
+  border: 1px solid var(--border);
+}
+.score-value {
+  font-family: var(--mono); font-size: 52px; font-weight: 500;
+  line-height: 1; letter-spacing: -0.02em;
+}
+.score-band.zone-vl { background: var(--crit-bg); border-color: #fecaca; }
+.score-band.zone-vl .score-value { color: var(--critical); }
+.score-band.zone-ar { background: var(--amber-bg); border-color: #fde68a; }
+.score-band.zone-ar .score-value { color: var(--amber); }
+.score-band.zone-su { background: var(--ok-bg); border-color: #bbf7d0; }
+.score-band.zone-su .score-value { color: var(--ok); }
+.zone-badge {
+  font-family: var(--mono); font-size: 11px; font-weight: 600;
+  padding: 4px 10px; border-radius: 20px; letter-spacing: 0.06em;
+}
+.zone-vl .zone-badge { background: var(--critical); color: #fff; }
+.zone-ar .zone-badge { background: var(--amber); color: #fff; }
+.zone-su .zone-badge { background: var(--ok); color: #fff; }
+.score-detail { font-size: 13px; color: var(--fg-mid); line-height: 1.7; margin-top: 6px; }
+.score-right { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+.module-chip {
+  font-family: var(--mono); font-size: 11px; padding: 4px 10px;
+  background: var(--accent-bg); color: var(--accent-d);
+  border-radius: 20px; white-space: nowrap;
+}
+.coverage-chip {
+  font-family: var(--mono); font-size: 11px; color: var(--fg-dim);
+  white-space: nowrap;
+}
+
+/* Two-col info grid */
+.info-grid {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.info-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 10px; padding: 16px 18px;
+}
+.info-card-label {
+  font-family: var(--mono); font-size: 10.5px; color: var(--fg-dim);
+  letter-spacing: 0.09em; text-transform: uppercase; margin-bottom: 8px;
+}
+.info-card-value { font-size: 16px; font-weight: 600; color: var(--fg); }
+.info-card-sub { font-size: 12px; color: var(--fg-mid); margin-top: 3px; }
+.phenotype-hi { color: var(--critical); }
+.phenotype-ip { color: var(--amber); }
+.phenotype-mixed { color: var(--accent); }
+.phenotype-su { color: var(--ok); }
+
+/* xAI bar chart */
+.xai-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 10px; padding: 18px;
+}
+.xai-title {
+  font-family: var(--mono); font-size: 10.5px; color: var(--fg-dim);
+  letter-spacing: 0.09em; text-transform: uppercase; margin-bottom: 14px;
+}
+.xai-row {
+  display: grid; grid-template-columns: 90px 1fr 60px;
+  gap: 10px; align-items: center; margin-bottom: 8px;
+}
+.xai-marker { font-family: var(--mono); font-size: 12px; color: var(--fg); }
+.xai-bar-wrap { background: var(--bg-soft); border-radius: 3px; height: 6px; overflow: hidden; }
+.xai-bar { height: 100%; border-radius: 3px; background: var(--accent); transition: width 0.4s ease; }
+.xai-bar.kill { background: var(--critical); }
+.xai-bar.moderate { background: var(--amber); }
+.xai-bar.noise { background: var(--fg-dim); }
+.xai-val { font-family: var(--mono); font-size: 11px; color: var(--fg-mid); text-align: right; }
+
+/* Rules */
+.rules-grid { display: flex; flex-direction: column; gap: 8px; }
+.rule-row {
+  display: grid; grid-template-columns: 36px 1fr auto;
+  gap: 10px; align-items: start;
+  padding: 10px 14px; border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.rule-row.triggered { background: var(--crit-bg); border-color: #fecaca; }
+.rule-row.pass      { background: var(--ok-bg); border-color: #bbf7d0; }
+.rule-id {
+  font-family: var(--mono); font-size: 12px; font-weight: 600;
+  color: var(--fg-dim);
+}
+.rule-row.triggered .rule-id { color: var(--critical); }
+.rule-row.pass      .rule-id { color: var(--ok); }
+.rule-desc { font-size: 12.5px; color: var(--fg-mid); line-height: 1.5; }
+.rule-row.triggered .rule-desc { color: var(--fg); }
+.rule-status {
+  font-family: var(--mono); font-size: 10.5px; font-weight: 600;
+  padding: 2px 8px; border-radius: 4px; white-space: nowrap;
+}
+.triggered .rule-status { background: var(--critical); color: #fff; }
+.pass      .rule-status { background: var(--ok); color: #fff; }
+
+/* ICD-10 */
+.icd-section { display: flex; flex-direction: column; gap: 12px; }
+.icd-group-label {
+  font-family: var(--mono); font-size: 10.5px; color: var(--accent);
+  letter-spacing: 0.09em; text-transform: uppercase; margin-bottom: 6px;
+}
+.icd-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.icd-chip {
+  font-family: var(--mono); font-size: 11.5px;
+  padding: 4px 10px; border-radius: 5px;
+  background: var(--bg-soft); border: 1px solid var(--border);
+  color: var(--fg-mid); display: flex; gap: 6px; align-items: center;
+}
+.icd-code { color: var(--accent); font-weight: 500; }
+
+/* Section title */
+.section-title {
+  font-size: 13px; font-weight: 600; color: var(--fg); margin: 0 0 12px;
+  display: flex; align-items: center; gap: 8px;
+}
+.section-title::after {
+  content: ""; flex: 1; height: 1px; background: var(--border);
+}
+
+/* ── Print styles ── */
+@media print {
+  .topbar, .left-panel, .report-actions, .action-btn { display: none !important; }
+  body { font-size: 12pt; background: #fff; color: #000; }
+  .layout { display: block; }
+  .right-panel { padding: 0; overflow: visible; }
+  #results { display: flex !important; }
+  .score-band { border: 2px solid #ccc !important; background: #f9f9f9 !important; }
+  .score-value { color: #000 !important; }
+  .info-card, .xai-card, .rule-row { border: 1px solid #ccc; break-inside: avoid; }
+  .info-grid { grid-template-columns: 1fr 1fr; }
+  .print-header { display: block !important; }
+  a { text-decoration: none; color: inherit; }
+}
+.print-header {
+  display: none;
+  border-bottom: 2pt solid #000; margin-bottom: 16pt; padding-bottom: 8pt;
+}
+.print-header h1 { font-size: 16pt; margin: 0 0 4pt; }
+.print-header p  { font-size: 9pt; color: #555; margin: 0; }
+
+/* ── Responsive ── */
+@media (max-width: 860px) {
+  .layout { grid-template-columns: 1fr; }
+  .left-panel { border-right: none; border-bottom: 1px solid var(--border); }
+  .info-grid { grid-template-columns: 1fr; }
+  .score-band { grid-template-columns: 1fr; }
+  .score-right { align-items: flex-start; }
+}
+</style>
+</head>
+<body>
+
+<!-- ── TOPBAR ── -->
+<header class="topbar">
+  <a href="/" class="topbar-logo">
+    <div class="logo-icon">
+      <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+        <polyline points="1,10 4,10 5,5 6,15 7,8 8,11 9,10 13,10 14,4 15,16 16,10 19,10"
+          stroke="#0284c7" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <span class="brand-name">SepsisAI BEI API</span>
+  </a>
+  <span class="brand-sep">›</span>
+  <span class="page-title">Analysis Tool</span>
+  <div class="topbar-right">
+    <a href="/docs"  class="topbar-link">Swagger</a>
+    <a href="/health" class="topbar-link">Health</a>
+    <a href="/"     class="topbar-link">← Home</a>
+  </div>
+</header>
+
+<!-- ── LAYOUT ── -->
+<main class="layout">
+
+  <!-- LEFT: Config + Input -->
+  <aside class="left-panel" id="left-panel">
+
+    <!-- Module selector -->
+    <div class="panel-section">
+      <div class="panel-label">Analysis Module</div>
+      <div class="module-toggle">
+        <button class="module-btn active" id="btn-moduleA" onclick="setModule('A')">
+          Module A<br><small style="font-size:10px;opacity:0.8">17-marker panel</small>
+        </button>
+        <button class="module-btn" id="btn-moduleB" onclick="setModule('B')">
+          Module B<br><small style="font-size:10px;opacity:0.8">KILL-4 panel</small>
+        </button>
+      </div>
+      <div class="module-desc" id="module-desc">
+        D-dimer · SOFA · Lactate · PTX3 · Urea · IL-8 · IL-10 · GCS ·
+        sIL-1R2 · CRP · PaO2_FiO2 · IL-6 · MAP · Platelets · IL-18 · IL-1ra · TNF-alpha · Creatinine
+      </div>
+    </div>
+
+    <!-- API config -->
+    <div class="panel-section">
+      <div class="panel-label">API Connection</div>
+      <div class="input-row">
+        <label class="input-label" for="api-url">Base URL</label>
+        <input type="text" id="api-url" value="http://localhost:8000" placeholder="http://localhost:8000">
+      </div>
+      <div class="input-row">
+        <label class="input-label" for="api-key">API Key (X-API-Key)</label>
+        <input type="password" id="api-key" placeholder="hosp_...">
+      </div>
+    </div>
+
+    <!-- File drop + JSON textarea -->
+    <div class="panel-section">
+      <div class="panel-label">Input Data</div>
+      <div class="drop-zone" id="drop-zone"
+           ondragover="event.preventDefault();this.classList.add('drag-over')"
+           ondragleave="this.classList.remove('drag-over')"
+           ondrop="handleDrop(event)"
+           onclick="document.getElementById('file-input').click()">
+        <div class="drop-inner">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/>
+            <path d="M12 12v9m-4-4 4-4 4 4"/>
+          </svg>
+          <span>Drop JSON file here</span>
+          <span class="drop-hint">or click to browse · .json or .txt</span>
+        </div>
+      </div>
+      <input type="file" id="file-input" accept=".json,.txt" style="display:none" onchange="handleFile(event)">
+
+      <div class="template-row">
+        <button class="tmpl-btn" onclick="fillTemplate('normal')">Normal values</button>
+        <button class="tmpl-btn" onclick="fillTemplate('critical')">Critical values</button>
+      </div>
+
+      <textarea id="json-input" spellcheck="false" placeholder="Paste JSON here or use a template above..."></textarea>
+    </div>
+
+    <div id="error-msg" class="error-msg"></div>
+
+    <button class="analyze-btn" id="analyze-btn" onclick="runAnalysis()">
+      <div class="spinner" id="spinner"></div>
+      <span class="btn-text">Analyze →</span>
+    </button>
+
+  </aside>
+
+  <!-- RIGHT: Results -->
+  <section class="right-panel" id="right-panel">
+
+    <!-- Empty state -->
+    <div class="empty-state" id="empty-state">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3">
+        <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2z"/>
+      </svg>
+      <h3>No analysis yet</h3>
+      <p>Upload or paste a JSON file with biomarker values, then click Analyze.</p>
+    </div>
+
+    <!-- Results area -->
+    <div id="results">
+
+      <!-- Print-only header -->
+      <div class="print-header">
+        <h1>SepsisAI BEI Analysis Report</h1>
+        <p id="print-meta"></p>
+      </div>
+
+      <!-- Report header -->
+      <div class="report-header">
+        <div>
+          <p class="report-title" id="r-patient"></p>
+          <p class="report-meta" id="r-meta"></p>
+        </div>
+        <div class="report-actions">
+          <button class="action-btn" onclick="copyJSON()">⎘ Copy JSON</button>
+          <button class="action-btn primary" onclick="printReport()">⎙ Print / Save PDF</button>
+        </div>
+      </div>
+
+      <!-- BEI Score -->
+      <div class="score-band" id="score-band">
+        <div>
+          <div class="score-value" id="r-score">—</div>
+        </div>
+        <div>
+          <div id="r-zone-badge" class="zone-badge">—</div>
+          <div class="score-detail" id="r-zone-detail"></div>
+        </div>
+        <div class="score-right">
+          <div class="module-chip" id="r-module">Module A</div>
+          <div class="coverage-chip" id="r-coverage"></div>
+          <div class="coverage-chip" id="r-tipping"></div>
+        </div>
+      </div>
+
+      <!-- Phenotype + Confidence -->
+      <div class="info-grid" id="info-grid" style="margin-top:16px">
+        <div class="info-card">
+          <div class="info-card-label">Immune Phenotype</div>
+          <div class="info-card-value" id="r-phenotype">—</div>
+          <div class="info-card-sub" id="r-pheno-sub"></div>
+        </div>
+        <div class="info-card">
+          <div class="info-card-label">Confidence · Module</div>
+          <div class="info-card-value" id="r-confidence">—</div>
+          <div class="info-card-sub" id="r-auc"></div>
+        </div>
+      </div>
+
+      <!-- xAI / Energy profile -->
+      <div id="xai-section" style="margin-top:20px">
+        <div class="section-title">xAI Biomarker Contributions</div>
+        <div class="xai-card">
+          <div class="xai-title">Tipping contributions — top drivers (TC score)</div>
+          <div id="xai-rows"></div>
+        </div>
+      </div>
+
+      <!-- Hard clinical rules -->
+      <div id="rules-section" style="margin-top:20px">
+        <div class="section-title">Hard Clinical Rules</div>
+        <div class="rules-grid" id="rules-grid"></div>
+      </div>
+
+      <!-- ICD-10 codes -->
+      <div id="icd-section" style="margin-top:20px">
+        <div class="section-title">ICD-10-CM Codes</div>
+        <div class="icd-section" id="icd-content"></div>
+      </div>
+
+    </div><!-- #results -->
+
+  </section>
+</main>
+
+<script>
+// ── State ──
+let currentModule = 'A';
+let lastResult    = null;
+
+const MODULE_A_MARKERS = {
+  "patient_id":   "ICU-001",
+  "markers": {
+    "D-dimer":    0.50,
+    "SOFA":       2,
+    "Lactate":    1.0,
+    "PTX3":       2.5,
+    "Urea":       15,
+    "IL-8":       5,
+    "IL-10":      3.2,
+    "GCS":        15,
+    "sIL-1R2":    850,
+    "CRP":        5,
+    "PaO2_FiO2":  400,
+    "IL-6":       8,
+    "MAP":        90,
+    "Platelets":  250,
+    "IL-18":      90,
+    "IL-1ra":     280,
+    "TNF-alpha":  7,
+    "Creatinine": 0.9
+  },
+  "module": "A",
+  "include_xai": true
+};
+
+const MODULE_A_CRITICAL = {
+  "patient_id":   "ICU-007",
+  "markers": {
+    "D-dimer":    3200,
+    "SOFA":       11,
+    "Lactate":    4.2,
+    "PTX3":       28,
+    "Urea":       82,
+    "IL-8":       210,
+    "IL-10":      3.2,
+    "GCS":        9,
+    "sIL-1R2":    4500,
+    "CRP":        210,
+    "PaO2_FiO2":  140,
+    "IL-6":       180,
+    "MAP":        58,
+    "Platelets":  72,
+    "IL-18":      940,
+    "IL-1ra":     1800,
+    "TNF-alpha":  42,
+    "Creatinine": 3.8
+  },
+  "module": "A",
+  "include_xai": true
+};
+
+const MODULE_B_MARKERS = {
+  "patient_id": "ICU-001",
+  "markers": {
+    "D-dimer":  0.50,
+    "SOFA":     2,
+    "Lactate":  1.0,
+    "PTX3":     2.5
+  },
+  "module": "B",
+  "include_xai": true
+};
+
+const MODULE_B_CRITICAL = {
+  "patient_id": "ICU-007",
+  "markers": {
+    "D-dimer":  3200,
+    "SOFA":     11,
+    "Lactate":  4.2,
+    "PTX3":     28
+  },
+  "module": "B",
+  "include_xai": true
+};
+
+// ── Module toggle ──
+function setModule(m) {
+  currentModule = m;
+  document.getElementById('btn-moduleA').classList.toggle('active', m === 'A');
+  document.getElementById('btn-moduleB').classList.toggle('active', m === 'B');
+  document.getElementById('module-desc').textContent = m === 'A'
+    ? 'D-dimer · SOFA · Lactate · PTX3 · Urea · IL-8 · IL-10 · GCS · sIL-1R2 · CRP · PaO2_FiO2 · IL-6 · MAP · Platelets · IL-18 · IL-1ra · TNF-alpha · Creatinine'
+    : 'D-dimer · SOFA · Lactate · PTX3';
+  // Update JSON if textarea is showing a template
+  const ta = document.getElementById('json-input').value.trim();
+  if (!ta) fillTemplate('normal');
+}
+
+// ── Template fill ──
+function fillTemplate(type) {
+  const templates = {
+    A: { normal: MODULE_A_MARKERS, critical: MODULE_A_CRITICAL },
+    B: { normal: MODULE_B_MARKERS, critical: MODULE_B_CRITICAL }
+  };
+  document.getElementById('json-input').value =
+    JSON.stringify(templates[currentModule][type], null, 2);
+}
+
+// ── File handling ──
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) readFile(file);
+}
+function handleFile(e) {
+  const file = e.target.files[0];
+  if (file) readFile(file);
+}
+function readFile(file) {
+  const reader = new FileReader();
+  reader.onload = ev => {
+    document.getElementById('json-input').value = ev.target.result;
+    showError('');
+  };
+  reader.readAsText(file);
+}
+
+// ── Error display ──
+function showError(msg) {
+  const el = document.getElementById('error-msg');
+  if (msg) { el.textContent = msg; el.classList.add('show'); }
+  else      { el.textContent = ''; el.classList.remove('show'); }
+}
+
+// ── Run analysis ──
+async function runAnalysis() {
+  showError('');
+  const rawJson = document.getElementById('json-input').value.trim();
+  if (!rawJson) { showError('Paste JSON or upload a file first.'); return; }
+
+  let payload;
+  try {
+    payload = JSON.parse(rawJson);
+  } catch(err) {
+    showError('Invalid JSON: ' + err.message); return;
+  }
+
+  // Ensure module + xai are set
+  if (!payload.module) payload.module = currentModule;
+  payload.include_xai = true;
+
+  const apiBase = document.getElementById('api-url').value.replace(/\/$/, '');
+  const apiKey  = document.getElementById('api-key').value.trim();
+
+  const btn = document.getElementById('analyze-btn');
+  btn.disabled = true;
+  btn.classList.add('loading');
+
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (apiKey) headers['X-API-Key'] = apiKey;
+
+    const resp = await fetch(apiBase + '/analyze', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload)
+    });
+
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      const detail = data.detail || JSON.stringify(data);
+      showError(`API error ${resp.status}: ${detail}`);
+      return;
+    }
+
+    lastResult = data;
+    renderResults(data, payload);
+
+  } catch(err) {
+    showError('Network error: ' + err.message + '\n\nIs the server running at ' + apiBase + '?');
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove('loading');
+  }
+}
+
+// ── Render results ──
+function renderResults(d, payload) {
+  // Show results, hide empty state
+  document.getElementById('empty-state').style.display = 'none';
+  const rEl = document.getElementById('results');
+  rEl.classList.add('show');
+
+  // Patient / meta
+  const pid = d.patient_id || d.external_patient_id || payload.patient_id || payload.external_patient_id || '(no id)';
+  document.getElementById('r-patient').textContent = 'Patient: ' + pid;
+  const ts = new Date().toLocaleString();
+  document.getElementById('r-meta').textContent =
+    `Analyzed ${ts} · Module ${d.module || payload.module || '?'} · ${Object.keys(payload.markers || {}).length} markers submitted`;
+  document.getElementById('print-meta').textContent =
+    `Patient: ${pid} | ${ts} | Module ${d.module || '?'} | SepsisAI BEI API — INVESTIGATIONAL`;
+
+  // BEI score
+  const score = d.bei_score ?? d.module_a_score ?? null;
+  const zone  = (d.bei_zone  ?? d.module_a_zone ?? '').toUpperCase();
+
+  document.getElementById('r-score').textContent = score != null ? score.toFixed(4) : '—';
+  const badge = document.getElementById('r-zone-badge');
+  badge.textContent = zone || '—';
+  const band = document.getElementById('score-band');
+  band.className = 'score-band';
+  if (zone === 'VERY_LOW')  band.classList.add('zone-vl');
+  else if (zone === 'AT_RISK') band.classList.add('zone-ar');
+  else if (zone === 'SUFFICIENT') band.classList.add('zone-su');
+  badge.className = 'zone-badge';
+
+  document.getElementById('r-zone-detail').textContent = d.bei_zone_detail || '';
+  document.getElementById('r-module').textContent = `Module ${d.module || '?'}`;
+  document.getElementById('r-coverage').textContent = d.coverage_pct != null ? `Coverage: ${(d.coverage_pct*100).toFixed(0)}%` : '';
+  document.getElementById('r-tipping').textContent = d.tipping_marker ? `↑ ${d.tipping_marker}` : '';
+
+  // Phenotype
+  const pheno = d.phenotype || d.immune_phenotype || '';
+  const pEl   = document.getElementById('r-phenotype');
+  pEl.textContent = pheno || '—';
+  pEl.className = 'info-card-value ' + phenoClass(pheno);
+  document.getElementById('r-pheno-sub').textContent =
+    (d.phenotype_confidence ? `Confidence: ${d.phenotype_confidence}` : '') +
+    (d.phenotype_subtype ? ` · ${d.phenotype_subtype}` : '');
+
+  // Confidence
+  document.getElementById('r-confidence').textContent = d.phenotype_confidence || d.confidence || '—';
+  document.getElementById('r-auc').textContent =
+    (d.module === 'A' || d.module === 'a') ? 'AUC 0.812 — Davoudian et al. 2023'
+    : (d.module === 'B' ? 'KILL-4 panel — validation pending' : '');
+
+  // xAI
+  renderXAI(d);
+
+  // Rules
+  renderRules(d);
+
+  // ICD-10
+  renderICD(d);
+
+  // Scroll results into view
+  rEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function phenoClass(p) {
+  if (!p) return '';
+  p = p.toUpperCase();
+  if (p.includes('HYPER')) return 'phenotype-hi';
+  if (p.includes('IMMUNO')) return 'phenotype-ip';
+  if (p.includes('MIXED')) return 'phenotype-mixed';
+  if (p.includes('SUFFICIENT') || p.includes('NORMAL')) return 'phenotype-su';
+  return '';
+}
+
+// ── xAI bars ──
+function renderXAI(d) {
+  const container = document.getElementById('xai-rows');
+  container.innerHTML = '';
+
+  const profile = d.energy_profile || d.xai?.tipping_contributions || {};
+  const weights = d.xai?.marker_weights || {};
+  const tiers   = d.xai?.marker_tiers  || {};
+
+  if (!Object.keys(profile).length) {
+    container.innerHTML = '<div style="color:var(--fg-dim);font-size:12px;font-family:var(--mono)">xAI data not available</div>';
+    return;
+  }
+
+  // Sort by absolute value, take top 10
+  const sorted = Object.entries(profile)
+    .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+    .slice(0, 10);
+
+  const maxVal = Math.max(...sorted.map(([,v]) => Math.abs(v)));
+
+  sorted.forEach(([marker, val]) => {
+    const pct = maxVal > 0 ? Math.abs(val) / maxVal * 100 : 0;
+    const tier = (tiers[marker] || '').toUpperCase();
+    const barClass = tier === 'KILL' ? 'kill' : tier === 'MODERATE' ? 'moderate' : tier === 'NOISE' ? 'noise' : '';
+
+    const row = document.createElement('div');
+    row.className = 'xai-row';
+    row.innerHTML = `
+      <div class="xai-marker">${marker}</div>
+      <div class="xai-bar-wrap"><div class="xai-bar ${barClass}" style="width:${pct.toFixed(1)}%"></div></div>
+      <div class="xai-val">${val > 0 ? '+' : ''}${val.toFixed(5)}</div>
+    `;
+    container.appendChild(row);
+  });
+}
+
+// ── Rules ──
+const RULE_LABELS = {
+  R1: 'Urea:Creatinine catabolism ratio — muscle wasting / protein malnutrition gate',
+  R2: 'IL-10 steroid contraindication — high IL-10 blocks corticosteroid use',
+  R3: 'DIC/ISTH screening gate — D-dimer × fibrinogen coagulopathy risk',
+  R4: 'CRRT/renal replacement therapy per KDIGO-AKI criteria',
+  R5: 'Protein energy target adequacy (≥1.2 g/kg/day)',
+};
+
+function renderRules(d) {
+  const grid = document.getElementById('rules-grid');
+  grid.innerHTML = '';
+
+  const rules = d.hard_rules || d.clinical_rules || d.rules || {};
+  if (!Object.keys(rules).length) {
+    grid.innerHTML = '<div style="color:var(--fg-dim);font-size:12px;font-family:var(--mono)">Rule data not available</div>';
+    return;
+  }
+
+  Object.entries(rules).forEach(([ruleId, ruleData]) => {
+    const isObj     = typeof ruleData === 'object' && ruleData !== null;
+    const status    = isObj ? (ruleData.status || ruleData.result || '') : String(ruleData);
+    const triggered = status.toUpperCase() === 'TRIGGERED' || status === 'true' || status === true;
+    const desc      = isObj ? (ruleData.detail || ruleData.message || ruleData.description || RULE_LABELS[ruleId] || '') : (RULE_LABELS[ruleId] || '');
+    const icdCode   = isObj ? (ruleData.icd_code || '') : '';
+
+    const row = document.createElement('div');
+    row.className = 'rule-row ' + (triggered ? 'triggered' : 'pass');
+    row.innerHTML = `
+      <div class="rule-id">${ruleId}</div>
+      <div class="rule-desc">${desc}${icdCode ? '<br><span style="font-family:var(--mono);font-size:11px;color:var(--accent)">ICD: ' + icdCode + '</span>' : ''}</div>
+      <div class="rule-status">${triggered ? '⚠ TRIGGERED' : '✓ PASS'}</div>
+    `;
+    grid.appendChild(row);
+  });
+}
+
+// ── ICD-10 ──
+function renderICD(d) {
+  const container = document.getElementById('icd-content');
+  container.innerHTML = '';
+
+  const icd = d.icd10_codes || d.icd_codes || d.icd10 || {};
+  if (!Object.keys(icd).length) {
+    container.innerHTML = '<div style="color:var(--fg-dim);font-size:12px;font-family:var(--mono)">ICD-10 codes not available</div>';
+    return;
+  }
+
+  const groups = {
+    'Marker-level': icd.marker_level || icd.markers || {},
+    'Phenotype-level': icd.phenotype_level ? { [d.phenotype || 'phenotype']: icd.phenotype_level } : {},
+    'Rule-outcome': icd.rule_level || icd.rules || {}
+  };
+
+  Object.entries(groups).forEach(([label, codes]) => {
+    if (!codes || !Object.keys(codes).length) return;
+
+    const group = document.createElement('div');
+    group.innerHTML = `<div class="icd-group-label">${label}</div>`;
+    const chips = document.createElement('div');
+    chips.className = 'icd-chips';
+
+    Object.entries(codes).forEach(([key, val]) => {
+      const vals = Array.isArray(val) ? val : [val];
+      vals.forEach(v => {
+        if (!v) return;
+        const isObj = typeof v === 'object';
+        const code  = isObj ? (v.code || v.icd_code || JSON.stringify(v)) : String(v);
+        const desc2  = isObj ? (v.description || v.desc || '') : '';
+        const chip = document.createElement('div');
+        chip.className = 'icd-chip';
+        chip.innerHTML = `<span class="icd-code">${code}</span>${desc2 ? '<span>' + desc2 + '</span>' : '<span>' + key + '</span>'}`;
+        chips.appendChild(chip);
+      });
+    });
+    group.appendChild(chips);
+    container.appendChild(group);
+  });
+
+  if (!container.children.length) {
+    // Flat structure fallback
+    const chips = document.createElement('div');
+    chips.className = 'icd-chips';
+    const flatten = (obj, prefix='') => {
+      Object.entries(obj).forEach(([k, v]) => {
+        if (typeof v === 'object' && v !== null && !Array.isArray(v)) {
+          flatten(v, prefix + k + '.');
+        } else {
+          const vals = Array.isArray(v) ? v : [v];
+          vals.forEach(code => {
+            if (!code) return;
+            const chip = document.createElement('div');
+            chip.className = 'icd-chip';
+            chip.innerHTML = `<span class="icd-code">${code}</span><span>${prefix}${k}</span>`;
+            chips.appendChild(chip);
+          });
+        }
+      });
+    };
+    flatten(icd);
+    container.appendChild(chips);
+  }
+}
+
+// ── Actions ──
+function copyJSON() {
+  if (!lastResult) return;
+  const text = JSON.stringify(lastResult, null, 2);
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+}
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand('copy');
+  document.body.removeChild(ta);
+}
+
+function printReport() {
+  window.print();
+}
+
+// ── Init: fill Module A template on load ──
+fillTemplate('normal');
+</script>
+</body>
+</html>
