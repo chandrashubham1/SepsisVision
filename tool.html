@@ -1091,14 +1091,16 @@ function renderResults(d, payload) {
   const pid = d.patient_id || d.external_patient_id || payload.patient_id || payload.external_patient_id || '(no id)';
   document.getElementById('r-patient').textContent = 'Patient: ' + pid;
   const ts = new Date().toLocaleString();
+  const markerCount = Object.keys(payload.biomarkers || payload.markers || {}).filter(k => k !== 'patient_id').length;
   document.getElementById('r-meta').textContent =
-    `Analyzed ${ts} · Module ${d.module || payload.module || '?'} · ${Object.keys(payload.markers || {}).length} markers submitted`;
+    `Analyzed ${ts} · Module ${d.module || payload.module || '?'} · ${markerCount} markers submitted`;
   document.getElementById('print-meta').textContent =
     `Patient: ${pid} | ${ts} | Module ${d.module || '?'} | SepsisAI BEI API — INVESTIGATIONAL`;
 
-  // BEI score
-  const score = d.bei_score ?? d.module_a_score ?? null;
-  const zone  = (d.bei_zone  ?? d.module_a_zone ?? '').toUpperCase();
+  // BEI score — response nests BEI fields under d.bei (BEIResult object)
+  const bei   = d.bei || {};
+  const score = bei.bei_score ?? d.bei_score ?? d.module_a_score ?? null;
+  const zone  = (bei.bei_zone  ?? d.bei_zone  ?? d.module_a_zone ?? '').toUpperCase();
 
   document.getElementById('r-score').textContent = score != null ? score.toFixed(4) : '—';
   const badge = document.getElementById('r-zone-badge');
@@ -1110,10 +1112,12 @@ function renderResults(d, payload) {
   else if (zone === 'SUFFICIENT') band.classList.add('zone-su');
   badge.className = 'zone-badge';
 
-  document.getElementById('r-zone-detail').textContent = d.bei_zone_detail || '';
+  document.getElementById('r-zone-detail').textContent = bei.bei_zone_detail || d.bei_zone_detail || '';
   document.getElementById('r-module').textContent = `Module ${d.module || '?'}`;
-  document.getElementById('r-coverage').textContent = d.coverage_pct != null ? `Coverage: ${(d.coverage_pct*100).toFixed(0)}%` : '';
-  document.getElementById('r-tipping').textContent = d.tipping_marker ? `↑ ${d.tipping_marker}` : '';
+  const cov = bei.coverage_pct ?? d.coverage_pct;
+  document.getElementById('r-coverage').textContent = cov != null ? `Coverage: ${(cov*100).toFixed(0)}%` : '';
+  const tip = bei.tipping_marker || d.tipping_marker;
+  document.getElementById('r-tipping').textContent = tip ? `↑ ${tip}` : '';
 
   // Phenotype
   const pheno = d.phenotype || d.immune_phenotype || '';
@@ -1158,9 +1162,15 @@ function renderXAI(d) {
   const container = document.getElementById('xai-rows');
   container.innerHTML = '';
 
-  const profile = d.energy_profile || d.xai?.tipping_contributions || {};
-  const weights = d.xai?.marker_weights || {};
-  const tiers   = d.xai?.marker_tiers  || {};
+  // xai_report.marker_attributions is a list of {marker, tc, tier, energy, ...}
+  const attribs = (d.xai_report?.marker_attributions || d.xai?.marker_attributions || []);
+  const tiersMap = {}, tcMap = {};
+  attribs.forEach(a => { tiersMap[a.marker] = a.tier; tcMap[a.marker] = a.tc; });
+
+  // Prefer tc (tipping contribution) values, fall back to energy_profile
+  const profile = Object.keys(tcMap).length ? tcMap
+    : (d.bei?.energy_profile || d.energy_profile || d.xai?.tipping_contributions || {});
+  const tiers   = tiersMap;
 
   if (!Object.keys(profile).length) {
     container.innerHTML = '<div style="color:var(--fg-dim);font-size:12px;font-family:var(--mono)">xAI data not available</div>';
@@ -1203,9 +1213,22 @@ function renderRules(d) {
   const grid = document.getElementById('rules-grid');
   grid.innerHTML = '';
 
-  const rules = d.hard_rules || d.clinical_rules || d.rules || {};
-  if (!Object.keys(rules).length) {
-    grid.innerHTML = '<div style="color:var(--fg-dim);font-size:12px;font-family:var(--mono)">Rule data not available</div>';
+  const rules = d.hard_rules || d.clinical_rules || d.rules || null;
+  const flags = Array.isArray(d.clinical_flags) ? d.clinical_flags : [];
+
+  // clinical_flags is a List[str] in the API response — show as triggered flags
+  if (flags.length) {
+    flags.forEach(flag => {
+      const row = document.createElement('div');
+      row.className = 'rule-row triggered';
+      row.innerHTML = `<div class="rule-desc" style="grid-column:1/-1">⚠ ${flag}</div>`;
+      grid.appendChild(row);
+    });
+    if (!rules || !Object.keys(rules).length) return;
+  }
+
+  if (!rules || !Object.keys(rules).length) {
+    if (!flags.length) grid.innerHTML = '<div style="color:var(--fg-dim);font-size:12px;font-family:var(--mono)">No clinical flags triggered</div>';
     return;
   }
 
