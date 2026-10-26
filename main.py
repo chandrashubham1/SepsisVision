@@ -11,8 +11,10 @@ Hospital-facing production API:
 """
 from __future__ import annotations
 
+import base64
 import json
 import logging
+import os
 from contextlib import asynccontextmanager
 from typing import Annotated, List, Optional
 
@@ -22,7 +24,7 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
@@ -139,10 +141,33 @@ def root() -> HTMLResponse:
 # ── Analysis tool page ────────────────────────────────────────────────────────
 _TOOL_HTML: str = (_pathlib.Path(__file__).parent / "tool.html").read_text(encoding="utf-8")
 
+_TOOL_USERNAME: str = os.getenv("TOOL_USERNAME", "admin")
+_TOOL_PASSWORD: str = os.getenv("TOOL_PASSWORD", "")
+
+
+def _check_basic_auth(request: Request) -> bool:
+    """Return True if the request carries valid Basic Auth credentials."""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Basic "):
+        return False
+    try:
+        decoded = base64.b64decode(auth[6:]).decode("utf-8")
+        username, password = decoded.split(":", 1)
+        return username == _TOOL_USERNAME and password == _TOOL_PASSWORD
+    except Exception:
+        return False
+
 
 @app.get("/tool", response_class=HTMLResponse, include_in_schema=False)
-def tool_page() -> HTMLResponse:
-    """Serve the BEI Analysis Tool UI — always fresh, never cached."""
+def tool_page(request: Request) -> HTMLResponse:
+    """Serve the BEI Analysis Tool UI — password-protected, always fresh."""
+    # Enforce Basic Auth only when TOOL_PASSWORD is configured
+    if _TOOL_PASSWORD and not _check_basic_auth(request):
+        return Response(
+            status_code=401,
+            headers={"WWW-Authenticate": 'Basic realm="SepsisAI Tool"'},
+            content="Unauthorized — please enter your credentials.",
+        )
     html = (_pathlib.Path(__file__).parent / "tool.html").read_text(encoding="utf-8")
     return HTMLResponse(
         content=html,
