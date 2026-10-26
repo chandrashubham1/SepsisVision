@@ -43,7 +43,11 @@ SentenceTransformer('NeuML/pubmedbert-base-embeddings'); \
 CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')" || true
 
 # --- Copy application ---
-COPY config.py models.py bei_engine.py rag_retrieval.py treatment.py lab_parser.py main.py ./
+COPY *.py ./
+COPY tool.html landing.html ./
+COPY static/ ./static/
+COPY alembic/ ./alembic/
+COPY alembic.ini ./
 
 # --- Data directories (overridden by volume mounts at runtime) ---
 RUN mkdir -p /data/chroma_db /data/patient_cache
