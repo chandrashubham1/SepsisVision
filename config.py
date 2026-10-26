@@ -23,10 +23,18 @@ APP_DESCRIPTION = (
 )
 
 # ── Database ─────────────────────────────────────────────────────────────────
-DATABASE_URL = os.getenv(
+_db_url = os.getenv(
     "DATABASE_URL",
     "postgresql://sepsisai:sepsisai@localhost:5432/sepsisai"
 )
+# Force psycopg2 driver (installed as psycopg2-binary).
+# SQLAlchemy 2.x defaults to psycopg3 for plain postgresql:// URLs,
+# but only psycopg2-binary is in requirements.txt.
+if _db_url.startswith("postgres://"):
+    _db_url = "postgresql+psycopg2://" + _db_url[len("postgres://"):]
+elif _db_url.startswith("postgresql://") and "+psycopg" not in _db_url:
+    _db_url = "postgresql+psycopg2://" + _db_url[len("postgresql://"):]
+DATABASE_URL: str = _db_url
 DB_ECHO = os.getenv("DB_ECHO", "false").lower() == "true"
 
 # ── Authentication ────────────────────────────────────────────────────────────
