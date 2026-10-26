@@ -665,13 +665,11 @@ textarea#json-input:focus { border-color: var(--accent); }
         </div>
       </div>
 
-      <!-- Three-phase progress strip -->
+      <!-- Two-phase progress strip (concurrent) -->
       <div class="phase-strip" id="phase-strip" style="display:none">
-        <span class="phase-pip idle" id="pip-bei">① BEI Score</span>
-        <span style="opacity:.3">›</span>
-        <span class="phase-pip idle" id="pip-xai">② xAI Analysis</span>
-        <span style="opacity:.3">›</span>
-        <span class="phase-pip idle" id="pip-narrative">③ Narrative</span>
+        <span class="phase-pip idle" id="pip-bei">① What's Failing</span>
+        <span style="opacity:.3">‖</span>
+        <span class="phase-pip idle" id="pip-narrative">② AI Narrative</span>
       </div>
 
       <!-- BEI Score -->
@@ -738,15 +736,15 @@ textarea#json-input:focus { border-color: var(--accent); }
         <div class="icd-section" id="icd-content"></div>
       </div>
 
-      <!-- Phase 3: Clinical Narrative (on-demand expand) -->
+      <!-- Part 2: Clinical Narrative (auto-expanded, live stream) -->
       <div id="narrative-section" style="margin-top:24px;display:none">
         <button class="narrative-toggle" id="narrative-toggle" onclick="toggleNarrative()">
-          <span class="narrative-toggle-icon" id="narrative-toggle-icon">▶</span>
+          <span class="narrative-toggle-icon" id="narrative-toggle-icon">▼</span>
           Clinical Narrative
-          <span class="phase-status" id="narrative-status" style="margin-left:auto">● Loading…</span>
+          <span class="phase-status" id="narrative-status" style="margin-left:auto">● Streaming…</span>
         </button>
-        <div class="narrative-card" id="narrative-card" style="display:none;margin-top:8px">
-          <span id="narrative-text"></span><span class="stream-cursor" id="stream-cursor" style="display:none">▌</span>
+        <div class="narrative-card" id="narrative-card" style="margin-top:8px">
+          <span id="narrative-text"></span><span class="stream-cursor" id="stream-cursor">▌</span>
         </div>
       </div>
 
@@ -923,25 +921,33 @@ async function runAnalysis() {
   const apiBase = document.getElementById('api-url').value.replace(/\/$/, '');
   const apiKey  = document.getElementById('api-key').value.trim();
 
-  // Reset phase UI for fresh run
-  document.getElementById('phase-strip').style.display  = 'none';
+  // ── Show phase strip immediately; fire BOTH calls concurrently ───────────────
+  document.getElementById('phase-strip').style.display = 'flex';
   document.getElementById('narrative-section').style.display = 'none';
-  ['bei','xai','narrative'].forEach(id => setPip(id, 'idle'));
-  setPip('bei', 'live');
+  setPip('bei',       'live');
+  setPip('narrative', 'live');
 
   const btn = document.getElementById('analyze-btn');
   btn.disabled = true;
   btn.classList.add('loading');
 
-  try {
-    const headers = { 'Content-Type': 'application/json' };
-    if (apiKey) headers['X-API-Key'] = apiKey;
+  const headers = { 'Content-Type': 'application/json' };
+  if (apiKey) headers['X-API-Key'] = apiKey;
 
-    const resp = await fetch(apiBase + '/analyze', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload)
-    });
+  // ── Launch BOTH in parallel ─────────────────────────────────────────────────
+  // Part 1: fast deterministic BEI (pure math, ~100 ms)
+  const analyzePromise = fetch(apiBase + '/analyze', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload)
+  });
+
+  // Part 2: Claude narrative stream — starts immediately, no need to wait for Part 1
+  runNarrativeStream(payload, apiBase, apiKey);
+
+  // ── Await Part 1 and render results ────────────────────────────────────────
+  try {
+    const resp = await analyzePromise;
 
     let data;
     const rawText = await resp.text();
@@ -951,7 +957,6 @@ async function runAnalysis() {
     if (!resp.ok) {
       let detail = data.detail;
       if (Array.isArray(detail)) {
-        // FastAPI validation errors → array of {loc, msg, type}
         detail = detail.map(e => `${e.loc?.join('.')||''}: ${e.msg}`).join('\n');
       } else if (typeof detail !== 'string') {
         detail = JSON.stringify(detail, null, 2);
@@ -962,14 +967,9 @@ async function runAnalysis() {
 
     lastResult = data;
 
-    // Phase 1+2: render BEI + xAI immediately (no API call)
-    setPip('bei',  'done');
-    setPip('xai',  'done');
-    setPip('narrative', 'live');
+    // Part 1 done — render BEI + xAI results (narrative stream continues independently)
+    setPip('bei', 'done');
     renderResults(data, payload);
-
-    // Phase 3: stream narrative from Claude (separate, non-blocking)
-    runNarrativeStream(payload, apiBase, apiKey);
 
   } catch(err) {
     showError('Network error: ' + err.message + '\n\nIs the server running at ' + apiBase + '?');
@@ -1032,19 +1032,20 @@ async function runNarrativeStream(payload, apiBase, apiKey) {
   _narrativeBuffer   = [];
   _narrativeDone     = false;
   _narrativeError    = null;
-  _narrativeExpanded = false;
+  _narrativeExpanded = true;   // auto-expanded: user sees tokens as they arrive
 
-  // Reset DOM
-  textEl.textContent     = '';
-  cursorEl.style.display = 'none';
-  statusEl.textContent   = '● Loading…';
+  // Reset DOM — card open immediately, cursor visible
+  textEl.innerHTML       = '';
+  cursorEl.style.display = 'inline';
+  statusEl.textContent   = '● Streaming…';
   statusEl.className     = 'phase-status';
-  document.getElementById('narrative-toggle').classList.remove('open');
-  document.getElementById('narrative-card').style.display = 'none';
-  section.style.display  = 'block';
-
-  // Show phase strip
-  document.getElementById('phase-strip').style.display = 'flex';
+  const toggleEl = document.getElementById('narrative-toggle');
+  const iconEl   = document.getElementById('narrative-toggle-icon');
+  toggleEl.classList.add('open');
+  if (iconEl) iconEl.textContent = '▼';
+  const card = document.getElementById('narrative-card');
+  card.style.display = 'block';
+  section.style.display = 'block';
 
   try {
     const headers = { 'Content-Type': 'application/json' };
