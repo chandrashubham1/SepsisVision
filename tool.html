@@ -136,6 +136,26 @@ body {
   padding: 8px 10px; background: var(--bg-soft);
   border: 1px solid var(--border); border-radius: 6px;
 }
+/* Module comparison card */
+.module-compare {
+  border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  font-size: 12px;
+}
+.module-compare-row {
+  display: grid; grid-template-columns: 90px 1fr 1fr;
+  border-bottom: 1px solid var(--border);
+}
+.module-compare-row:last-child { border-bottom: none; }
+.module-compare-row.header { background: var(--bg-soft); }
+.mcc { padding: 6px 8px; border-right: 1px solid var(--border); }
+.mcc:last-child { border-right: none; }
+.mcc.active-col { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.mcc.label { font-size: 11px; color: var(--fg-dim); font-weight: 500; }
+.mcc.hdr  { font-weight: 700; color: var(--fg); font-size: 12px; }
+.mcc.hdr.active-col { color: var(--accent); }
+.mcc.val  { color: var(--fg); line-height: 1.4; }
+.mcc.good { color: var(--ok); font-weight: 600; }
+.mcc.warn { color: var(--amber, #d97706); font-weight: 600; }
 
 /* API config */
 .input-row { display: flex; flex-direction: column; gap: 4px; }
@@ -563,12 +583,47 @@ textarea#json-input:focus { border-color: var(--accent); }
       <div class="panel-label">Analysis Module</div>
       <div class="module-toggle">
         <button class="module-btn active" id="btn-moduleA" onclick="setModule('A')">
-          Module A<br><small style="font-size:10px;opacity:0.8">17-marker panel</small>
+          Module A<br><small style="font-size:10px;opacity:0.8">17-marker · BEI full</small>
         </button>
         <button class="module-btn" id="btn-moduleB" onclick="setModule('B')">
-          Module B<br><small style="font-size:10px;opacity:0.8">KILL-4 panel</small>
+          Module B<br><small style="font-size:10px;opacity:0.8">KILL-4 · rapid triage</small>
         </button>
       </div>
+
+      <!-- Module comparison table -->
+      <div class="module-compare" id="module-compare">
+        <div class="module-compare-row header">
+          <div class="mcc label"></div>
+          <div class="mcc hdr active-col" id="hdr-A">Module A</div>
+          <div class="mcc hdr" id="hdr-B">Module B</div>
+        </div>
+        <div class="module-compare-row">
+          <div class="mcc label">Markers</div>
+          <div class="mcc val active-col" id="mcA-markers">17 (full BEI panel)</div>
+          <div class="mcc val" id="mcB-markers">4 (KILL-4)</div>
+        </div>
+        <div class="module-compare-row">
+          <div class="mcc label">Panel</div>
+          <div class="mcc val active-col" id="mcA-panel">Cytokines + labs + organ scores</div>
+          <div class="mcc val" id="mcB-panel">D-dimer · SOFA · Lactate · PTX3</div>
+        </div>
+        <div class="module-compare-row">
+          <div class="mcc label">AUC</div>
+          <div class="mcc good active-col" id="mcA-auc">0.812 (validated)</div>
+          <div class="mcc warn" id="mcB-auc">Unvalidated</div>
+        </div>
+        <div class="module-compare-row">
+          <div class="mcc label">Best for</div>
+          <div class="mcc val active-col" id="mcA-use">Full cytokine panel available; ICU / research</div>
+          <div class="mcc val" id="mcB-use">Rapid ED triage; cytokines unavailable</div>
+        </div>
+        <div class="module-compare-row">
+          <div class="mcc label">Speed</div>
+          <div class="mcc val active-col" id="mcA-speed">~100 ms</div>
+          <div class="mcc good" id="mcB-speed">~100 ms</div>
+        </div>
+      </div>
+
       <div class="module-desc" id="module-desc">
         D-dimer · SOFA · Lactate · PTX3 · Urea · IL-8 · IL-10 · GCS ·
         sIL-1R2 · CRP · PaO2_FiO2 · IL-6 · MAP · Platelets · IL-18 · IL-1ra · TNF-alpha · Creatinine
@@ -842,6 +897,19 @@ function setModule(m) {
   document.getElementById('module-desc').textContent = m === 'A'
     ? 'D-dimer · SOFA · Lactate · PTX3 · Urea · IL-8 · IL-10 · GCS · sIL-1R2 · CRP · PaO2_FiO2 · IL-6 · MAP · Platelets · IL-18 · IL-1ra · TNF-alpha · Creatinine'
     : 'D-dimer · SOFA · Lactate · PTX3';
+
+  // Highlight active column in comparison table
+  ['markers','panel','auc','use','speed'].forEach(row => {
+    const a = document.getElementById('mcA-' + row);
+    const b = document.getElementById('mcB-' + row);
+    if (a) a.classList.toggle('active-col', m === 'A');
+    if (b) b.classList.toggle('active-col', m === 'B');
+  });
+  const hA = document.getElementById('hdr-A');
+  const hB = document.getElementById('hdr-B');
+  if (hA) hA.classList.toggle('active-col', m === 'A');
+  if (hB) hB.classList.toggle('active-col', m === 'B');
+
   // Update JSON if textarea is showing a template
   const ta = document.getElementById('json-input').value.trim();
   if (!ta) fillTemplate('normal');
