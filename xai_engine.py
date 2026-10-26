@@ -245,6 +245,11 @@ def evaluate_hard_rules(raw: Dict[str, Any], ep: Dict[str, float]) -> List[dict]
     # ── Rule 1 + 5: U:Cr ratio → catabolism vs AKI + protein target ─────────
     urea      = float(raw.get("Urea", 0) or 0)
     creat     = float(raw.get("Creatinine", 1) or 1)
+    # Unit guard: creatinine < 20 μmol/L is biologically impossible in a living adult.
+    # Values < 20 almost certainly mean the user entered mg/dL instead of μmol/L.
+    # Convert: mg/dL × 88.4 → μmol/L (Scand J Clin Lab Invest 1967 SI factor).
+    if 0 < creat < 20:
+        creat = round(creat * 88.4, 1)
     creat_si  = creat / 1000.0          # μmol/L → mmol/L
     uc_ratio  = round(urea / creat_si, 1) if creat_si > 0 else 0.0
     catabolic = uc_ratio > 150
@@ -533,33 +538,44 @@ def build_xai_attribution(bei: dict, raw: Dict[str, Any]) -> dict:
     # Q1 = lowest BEI (≤25th pct), Q5 = highest BEI (>80th pct)
     # Approximate quartile from score
     bp = BEI_PERFORMANCE
-    if score <= 0.45:
-        quartile_mortality = bp.get("Q1_mortality", 0.90)
-        quartile_label     = "1st quartile (lowest biological reserve)"
-    elif score <= 0.55:
-        quartile_mortality = bp.get("Q2_mortality", 0.43)
-        quartile_label     = "2nd quartile"
-    elif score <= 0.67:
-        quartile_mortality = 0.15   # between Q2 and Q3/Q4 (AT_RISK zone)
-        quartile_label     = "3rd quartile"
-    elif score <= 0.80:
-        quartile_mortality = bp.get("Q3_Q4_mortality", 0.10)
-        quartile_label     = "3rd–4th quartile"
+    # Quintile mortality — Fig 3C, Chandra 2026 (JAIKE-2026-0015); n=21 per quintile
+    # Quintile boundaries are approximate 20th-percentile intervals of the out-of-fold score
+    if score <= 0.48:
+        quartile_mortality = bp.get("Q1_mortality", 0.86)
+        quartile_label     = "1st quintile (lowest biological reserve)"
+    elif score < 0.60:
+        quartile_mortality = bp.get("Q2_mortality", 0.38)
+        quartile_label     = "2nd quintile"
+    elif score < 0.67:
+        quartile_mortality = bp.get("Q3_Q4_mortality", 0.14)
+        quartile_label     = "3rd quintile"
+    elif score < 0.80:
+        quartile_mortality = bp.get("Q3_Q4_mortality", 0.14)
+        quartile_label     = "4th quintile"
     else:
         quartile_mortality = bp.get("Q5_mortality", 0.19)
-        quartile_label     = "5th quartile (highest biological reserve)"
+        quartile_label     = "5th quintile (highest biological reserve)"
+
+    # Zone-level (tertile) mortality — Fig 10 KM; more reliable than quintile for clinical narrative
+    zone_mortality = {
+        "VERY_LOW":   bp.get("tier_very_low_mortality",  0.71),
+        "AT_RISK":    bp.get("tier_at_risk_mortality",   0.17),
+        "SUFFICIENT": bp.get("tier_sufficient_mortality", 0.14),
+    }.get(zone, quartile_mortality)
 
     predicted_outcome = (
-        f"BEI={score:.4f} ({zone} zone) places this patient in the {quartile_label} "
-        f"of the Davoudian 2023 cohort (N=135). "
-        f"Patients in this quartile had approximately {quartile_mortality*100:.0f}% 90-day mortality. "
-        f"Cohort baseline: {bp['cohort_baseline']*100:.1f}%. "
-        f"{'This BEI places the patient BELOW the cohort baseline — elevated risk.' if quartile_mortality > bp['cohort_baseline'] else 'This BEI places the patient ABOVE the cohort baseline — relative preservation of energy reserve.'}"
+        f"BEI={score:.4f} ({zone} zone). "
+        f"Patients in this zone had approximately {zone_mortality*100:.0f}% 90-day mortality "
+        f"(tertile stratification, n=35 per tier, log-rank p<0.001; Fig 10, Chandra 2026). "
+        f"Quintile position: {quartile_label} ({quartile_mortality*100:.0f}% quintile mortality; Fig 3C). "
+        f"Cohort baseline: {bp['cohort_baseline']*100:.1f}% (105-patient analytical cohort). "
+        f"{'This BEI places the patient BELOW the cohort baseline — elevated risk.' if zone_mortality > bp['cohort_baseline'] else 'This BEI places the patient ABOVE the cohort baseline — relative preservation of energy reserve.'}"
     )
 
     zone_confidence = (
         f"Module {module} AUC={bp['auc_entropy_weighted'] if module == 'A' else 'not independently validated — Module A AUC={:.3f} as upper bound'.format(bp['auc_entropy_weighted'])}. "
-        f"Zone thresholds: VERY_LOW <0.55, AT_RISK 0.55–0.67, SUFFICIENT >0.67. "
+        f"Zone thresholds: VERY_LOW <0.60, AT_RISK 0.60–0.71, SUFFICIENT ≥0.71 "
+        f"(33rd/67th percentiles of out-of-fold BEI; Chandra 2026, Fig 10). "
         f"Calibration cohort: {bp['cohort']}."
     )
 
@@ -744,6 +760,24 @@ def build_rounds_prompt(
     flags_str     = "\n".join(f"  ⚠ {f}" for f in (flags or [])) or "  None"
     top_driver    = xai.get("top_driver", {})
     prediction    = xai.get("predicted_outcome", "")
+    module        = bei.get("module", "A")
+    marker_count  = bei.get("panel_size", 17)
+    # Phenotype — extract for null-guard in prompt
+    ph            = xai.get("phenotype", {}) or {}
+    phenotype_val = ph.get("phenotype", "INDETERMINATE")
+    phenotype_sub = ph.get("subtype", "")
+    phenotype_conf= ph.get("confidence", "")
+    if phenotype_val in ("INDETERMINATE", "UNKNOWN", None, ""):
+        phenotype_constraint = (
+            "• Phenotype: INDETERMINATE — do NOT include a phenotype section or name "
+            "a phenotype (SRS1, SRS2, hyperinflammatory, immunoparalysis) in this report. "
+            "Omit any phenotype characterisation entirely."
+        )
+    else:
+        phenotype_constraint = (
+            f"• Phenotype: {phenotype_val} ({phenotype_sub}, confidence {phenotype_conf}). "
+            "Reference this once in the biological narrative — do not repeat it."
+        )
 
     # Build the 3 worst markers + their clinical context for the prompt
     worst_3 = xai["marker_attributions"][:3]
@@ -784,6 +818,35 @@ PRIMARY TIPPING MARKER: {tipping} ({tipping_tier}-tier)
   energy most below the cohort average. This is the rate-limiting failure dimension.
 ══════════════════════════════════════════════════════════════
 
+══════════════════════════════════════════════════════════════
+GROUNDING CONSTRAINTS — THE FOLLOWING ARE FACTS, NOT SUGGESTIONS.
+DEVIATION FROM THESE CONSTITUTES A CLINICAL ERROR IN THIS REPORT.
+══════════════════════════════════════════════════════════════
+
+• Marker count: Module {module} analyses exactly {marker_count} markers.
+  Never write "{marker_count + 1} markers" or any other count.
+
+• Mortality source: The 90-day mortality percentage is in OUTCOME PREDICTION above.
+  Use that EXACT figure. Do NOT derive, estimate, or substitute your own number.
+
+• Lactate threshold (Sepsis-3): lactate ≥2.0 mmol/L = ELEVATED (tissue hypoperfusion).
+  Lactate ≥4.0 mmol/L = HIGH-RISK. NEVER describe lactate ≥2.0 mmol/L as
+  "acceptable," "normal," "within limits," or "not a primary concern."
+
+• IL-10 energy interpretation: IL-10 energy >0.70 means IL-10 is ELEVATED
+  relative to cohort — this signals IMMUNOPARALYSIS RISK (counter-regulatory
+  over-suppression), NOT "intact anti-inflammatory reserve." High IL-10 =
+  the brakes are stuck on; steroids push them further. Never invert this.
+
+• Tipping tier: {tipping} has tier={tipping_tier}.
+  BENIGN tier (0–8% tipping mortality) markers contribute entropy weight
+  to BEI but are NOT mortality drivers. If the primary tipping marker is
+  BENIGN tier, frame the clinical risk through the next-highest TC marker
+  whose tier is KILL or MODERATE.
+
+{phenotype_constraint}
+
+══════════════════════════════════════════════════════════════
 YOUR TASK — produce EXACTLY these four sections. No preamble. Start with ROUNDS BRIEFING.
 
 ROUNDS BRIEFING (2–3 sentences)

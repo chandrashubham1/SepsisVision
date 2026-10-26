@@ -575,6 +575,9 @@ def build_xai_document(
     # ── Hard rules that fired ──────────────────────────────────────────────
     urea_val  = float(raw_input.get("Urea",  0) or 0)
     creat_val = float(raw_input.get("Creatinine", 1) or 1)
+    # Unit guard: creatinine < 20 μmol/L is biologically impossible; likely mg/dL entry
+    if 0 < creat_val < 20:
+        creat_val = round(creat_val * 88.4, 1)
     creat_si  = creat_val / 1000.0
     uc_ratio  = round(urea_val / creat_si, 1) if creat_si > 0 else 0.0
     il10_e    = ep.get("IL-10", 0.0)

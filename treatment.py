@@ -79,6 +79,9 @@ def _build_treatment_prompt(
     # Rule 1 + 5: U:Cr ratio determines catabolism vs AKI and protein target
     urea_val   = float(raw.get("Urea", 0) or 0)
     creat_val  = float(raw.get("Creatinine", 1) or 1)
+    # Unit guard: creatinine < 20 μmol/L is biologically impossible; likely mg/dL entry
+    if 0 < creat_val < 20:
+        creat_val = round(creat_val * 88.4, 1)
     creat_si   = creat_val / 1000.0          # μmol/L → mmol/L
     uc_ratio   = round(urea_val / creat_si, 1) if creat_si > 0 else 0
     uc_mechanism = "CATABOLIC HYPERUREAEMIA" if uc_ratio > 150 else "AKI-PREDOMINANT"
@@ -291,6 +294,9 @@ def synthesize_treatment(
     # Pre-compute hard rule values for response metadata
     urea_val  = float(raw.get("Urea", 0) or 0)
     creat_val = float(raw.get("Creatinine", 1) or 1)
+    # Unit guard: creatinine < 20 μmol/L is biologically impossible; likely mg/dL entry
+    if 0 < creat_val < 20:
+        creat_val = round(creat_val * 88.4, 1)
     creat_si  = creat_val / 1000.0
     uc_ratio  = round(urea_val / creat_si, 1) if creat_si > 0 else 0
     uc_mechanism  = "CATABOLIC HYPERUREAEMIA" if uc_ratio > 150 else "AKI-PREDOMINANT"
