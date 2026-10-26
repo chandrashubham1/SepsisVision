@@ -276,6 +276,12 @@ def _build_analysis_response(
     if xai_result:
         xai_data = xai_result.get("xai_attribution") or xai_result
         top_d    = xai_data.get("top_driver")
+        # ── Phenotype (dict from classify_phenotype) ─────────────────────────
+        pheno     = xai_data.get("phenotype") or {}
+        pheno_icd = [
+            {"code": c, "description": d}
+            for c, d in pheno.get("icd_codes", [])
+        ]
         xai_report_obj = XAIReport(
             module             = xai_data.get("module", module),
             bei_score          = xai_data.get("bei_score", 0.0),
@@ -290,6 +296,11 @@ def _build_analysis_response(
             ],
             rounds_narrative   = xai_result.get("rounds_text"),
             rounds_model_used  = xai_result.get("model_used"),
+            phenotype            = pheno.get("phenotype"),
+            phenotype_subtype    = pheno.get("subtype"),
+            phenotype_confidence = pheno.get("confidence"),
+            phenotype_evidence   = pheno.get("evidence", []),
+            icd_codes            = pheno_icd,
         )
 
         # ── FDA xmd xAI document ─────────────────────────────────────────────

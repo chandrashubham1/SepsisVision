@@ -241,6 +241,12 @@ class XAIReport(BaseModel):
     marker_attributions: List[XAIMarkerAttribution]     = Field(default_factory=list)
     rounds_narrative:    Optional[str] = Field(None, description="Doctor-on-rounds narrative (Claude-generated)")
     rounds_model_used:   Optional[str] = None
+    # ── Immune phenotype (deterministic, derived from classify_phenotype) ──────
+    phenotype:            Optional[str]       = Field(None, description="HYPERINFLAMMATORY | IMMUNOPARALYSIS | MIXED / TRANSITIONAL | INDETERMINATE")
+    phenotype_subtype:    Optional[str]       = Field(None, description="SRS1-like | SRS2-like | SRS1–SRS2 overlap | —")
+    phenotype_confidence: Optional[str]       = Field(None, description="HIGH | MODERATE | LOW | LOW (SOFA <6)")
+    phenotype_evidence:   List[str]           = Field(default_factory=list, description="Supporting evidence statements")
+    icd_codes:            List[dict]          = Field(default_factory=list, description="ICD-10-CM codes list [{code, description}]")
 
 
 class AnalysisResponse(BaseModel):
