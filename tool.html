@@ -354,21 +354,36 @@ textarea#json-input:focus { border-color: var(--accent); }
   letter-spacing: 0.09em; text-transform: uppercase; margin-bottom: 14px;
 }
 .xai-row {
-  display: grid; grid-template-columns: 90px 1fr 60px;
-  gap: 10px; align-items: center; margin-bottom: 8px;
+  display: grid; grid-template-columns: 100px 1fr 74px;
+  gap: 10px; align-items: center; margin-bottom: 10px;
   opacity: 1; transform: translateY(0);
   transition: opacity 0.3s ease, transform 0.3s ease;
 }
 .xai-row.xai-pending {
   opacity: 0; transform: translateY(8px);
 }
-.xai-marker { font-family: var(--mono); font-size: 12px; color: var(--fg); }
-.xai-bar-wrap { background: var(--bg-soft); border-radius: 3px; height: 6px; overflow: hidden; }
-.xai-bar { height: 100%; border-radius: 3px; background: var(--accent); transition: width 0.4s ease; }
-.xai-bar.kill { background: var(--critical); }
-.xai-bar.moderate { background: var(--amber); }
-.xai-bar.noise { background: var(--fg-dim); }
-.xai-val { font-family: var(--mono); font-size: 11px; color: var(--fg-mid); text-align: right; }
+.xai-marker { font-family: var(--mono); font-size: 11.5px; color: var(--fg); }
+.xai-bar-wrap {
+  background: var(--bg-soft);
+  border-radius: 2px;
+  height: 10px;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06);
+}
+.xai-bar {
+  height: 100%;
+  border-radius: 0 2px 2px 0;
+  background: #3b82f6;          /* neutral blue — default */
+  transition: width 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.xai-bar.kill      { background: #be123c; }   /* rose-700 — critical failure */
+.xai-bar.moderate  { background: #b45309; }   /* amber-700 — significant */
+.xai-bar.noise     { background: #9ca3af; }   /* gray-400 — low impact */
+.xai-bar.protective{ background: #059669; }   /* emerald-600 — protective */
+.xai-val {
+  font-family: var(--mono); font-size: 11px; color: var(--fg-mid);
+  text-align: right; letter-spacing: 0.01em;
+}
 
 /* Rules */
 .rules-grid { display: flex; flex-direction: column; gap: 8px; }
@@ -1344,10 +1359,19 @@ function renderXAI(d) {
 
   const maxVal = Math.max(...sorted.map(([,v]) => Math.abs(v)));
 
+  // Build direction map for protective coloring
+  const dirMap = {};
+  attribs.forEach(a => { dirMap[a.marker] = (a.direction || '').toUpperCase(); });
+
   sorted.forEach(([marker, val], i) => {
     const pct = maxVal > 0 ? Math.abs(val) / maxVal * 100 : 0;
     const tier = (tiers[marker] || '').toUpperCase();
-    const barClass = tier === 'KILL' ? 'kill' : tier === 'MODERATE' ? 'moderate' : tier === 'NOISE' ? 'noise' : '';
+    const dir  = dirMap[marker] || (val < 0 ? 'PROTECTIVE' : 'FAILURE');
+    let barClass = tier === 'KILL'     ? 'kill'
+                 : tier === 'MODERATE' ? 'moderate'
+                 : tier === 'NOISE'    ? 'noise'
+                 : dir  === 'PROTECTIVE' ? 'protective'
+                 : '';
 
     const row = document.createElement('div');
     row.className = 'xai-row xai-pending';
@@ -1512,51 +1536,79 @@ function renderICD(d) {
   const container = document.getElementById('icd-content');
   container.innerHTML = '';
 
-  // New format: d.xai_report.icd_codes = [{code, description}, ...]
-  const icdArray = d.xai_report?.icd_codes || [];
-  if (icdArray.length) {
+  const section = document.createElement('div');
+  section.className = 'icd-section';
+
+  let hasAny = false;
+
+  // ── Group 1: Phenotype-level ICD codes ────────────────────────────────────
+  const phenoICD  = d.xai_report?.icd_codes || [];
+  const phenoName = d.xai_report?.phenotype;
+
+  if (phenoICD.length) {
+    hasAny = true;
+    const grp = document.createElement('div');
+    const label = document.createElement('div');
+    label.className = 'icd-group-label';
+    label.textContent = phenoName ? `Phenotype — ${phenoName}` : 'Phenotype ICD codes';
+    grp.appendChild(label);
+
     const chips = document.createElement('div');
     chips.className = 'icd-chips';
-    icdArray.forEach(item => {
+    phenoICD.forEach(item => {
       const chip = document.createElement('div');
       chip.className = 'icd-chip';
       chip.innerHTML = `<span class="icd-code">${item.code || ''}</span><span>${item.description || ''}</span>`;
       chips.appendChild(chip);
     });
-    container.appendChild(chips);
-    return;
+    grp.appendChild(chips);
+    section.appendChild(grp);
   }
 
-  // Legacy fallback: nested object
-  const icd = d.icd10_codes || d.icd_codes || d.icd10 || {};
-  if (!Object.keys(icd).length) {
+  // ── Group 2: Per-marker ICD codes from KILL/MODERATE attributions ─────────
+  const attribs = d.xai_report?.marker_attributions || [];
+  const seenCodes = new Set(phenoICD.map(x => x.code));
+  const markerICD = [];
+
+  attribs
+    .filter(a => ['KILL','MODERATE'].includes((a.tier||'').toUpperCase()))
+    .slice(0, 5)
+    .forEach(a => {
+      const codes = a.icd_codes || [];
+      codes.forEach(item => {
+        if (!item || seenCodes.has(item.code)) return;
+        seenCodes.add(item.code);
+        markerICD.push({ marker: a.marker, code: item.code, description: item.description || '' });
+      });
+    });
+
+  if (markerICD.length) {
+    hasAny = true;
+    const grp = document.createElement('div');
+    const label = document.createElement('div');
+    label.className = 'icd-group-label';
+    label.textContent = 'Marker-specific codes';
+    grp.appendChild(label);
+
+    const chips = document.createElement('div');
+    chips.className = 'icd-chips';
+    markerICD.forEach(item => {
+      const chip = document.createElement('div');
+      chip.className = 'icd-chip';
+      chip.title = item.marker;
+      chip.innerHTML = `<span class="icd-code">${item.code}</span><span>${item.description}</span>`;
+      chips.appendChild(chip);
+    });
+    grp.appendChild(chips);
+    section.appendChild(grp);
+  }
+
+  if (!hasAny) {
     container.innerHTML = '<div style="color:var(--fg-dim);font-size:12px;font-family:var(--mono)">ICD-10 codes not available</div>';
     return;
   }
 
-  const chips = document.createElement('div');
-  chips.className = 'icd-chips';
-  const flatten = (obj, prefix='') => {
-    Object.entries(obj).forEach(([k, v]) => {
-      if (typeof v === 'object' && v !== null && !Array.isArray(v)) {
-        flatten(v, prefix + k + '.');
-      } else {
-        const vals = Array.isArray(v) ? v : [v];
-        vals.forEach(code => {
-          if (!code) return;
-          const isObj = typeof code === 'object';
-          const codeStr = isObj ? (code.code || JSON.stringify(code)) : String(code);
-          const descStr = isObj ? (code.description || code.desc || '') : '';
-          const chip = document.createElement('div');
-          chip.className = 'icd-chip';
-          chip.innerHTML = `<span class="icd-code">${codeStr}</span><span>${descStr || prefix + k}</span>`;
-          chips.appendChild(chip);
-        });
-      }
-    });
-  };
-  flatten(icd);
-  container.appendChild(chips);
+  container.appendChild(section);
 }
 
 // ── Actions ──

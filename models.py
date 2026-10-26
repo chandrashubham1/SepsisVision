@@ -6,7 +6,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, Generic, List, Optional, TypeVar
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from pydantic.generics import GenericModel
 
 
@@ -221,6 +221,20 @@ class XAIMarkerAttribution(BaseModel):
     severity:         str               = Field(..., description="CRITICAL | SIGNIFICANT | MILD | NEUTRAL | PROTECTIVE")
     is_primary:       bool              = Field(False, description="True if this is the primary tipping marker")
     clinical_context: str               = ""
+    icd_codes:        List[dict]        = Field(default_factory=list, description="ICD-10-CM codes for this marker [{code, description}]")
+
+    @validator("icd_codes", pre=True, always=True, allow_reuse=True)
+    def normalize_icd_codes(cls, v):
+        """Accept tuple/list pairs or dicts; always return List[{code, description}]."""
+        if not v:
+            return []
+        result = []
+        for item in v:
+            if isinstance(item, dict):
+                result.append({"code": str(item.get("code", "")), "description": str(item.get("description", ""))})
+            elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                result.append({"code": str(item[0]), "description": str(item[1])})
+        return result
 
 
 class XAIReport(BaseModel):
