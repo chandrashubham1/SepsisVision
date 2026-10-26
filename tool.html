@@ -479,7 +479,7 @@ textarea#json-input:focus { border-color: var(--accent); }
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
   @page { margin: 20mm 18mm; }
   .topbar, .left-panel, .report-actions, .action-btn,
-  .phase-strip, .stream-cursor, #empty-state { display: none !important; }
+  .phase-strip, .stream-cursor, #empty-state, #warmup-msg { display: none !important; }
   html, body { overflow: visible !important; height: auto !important;
     font-family: Georgia, 'Times New Roman', serif; font-size: 10.5pt; color: #111; }
   .layout { display: block; overflow: visible !important; height: auto !important; }
@@ -726,6 +726,9 @@ textarea#json-input:focus { border-color: var(--accent); }
         <span style="opacity:.3">‖</span>
         <span class="phase-pip idle" id="pip-narrative">② AI Narrative</span>
       </div>
+      <p id="warmup-msg" style="display:none;font-size:11px;color:var(--fg-dim);margin:0 0 10px;text-align:center">
+        ⏳ Server warming up — this may take 30–60 s on first use
+      </p>
 
       <!-- BEI Score -->
       <div class="score-band" id="score-band">
@@ -1002,6 +1005,11 @@ async function runAnalysis() {
   const headers = { 'Content-Type': 'application/json' };
   if (apiKey) headers['X-API-Key'] = apiKey;
 
+  // Cold-start warning: show message if server doesn't respond within 8 s
+  const warmupMsg = document.getElementById('warmup-msg');
+  warmupMsg.style.display = 'none';
+  const warmupTimer = setTimeout(() => { warmupMsg.style.display = 'block'; }, 8000);
+
   // ── Launch BOTH in parallel ─────────────────────────────────────────────────
   // Part 1: fast deterministic BEI (pure math, ~100 ms)
   const analyzePromise = fetch(apiBase + '/analyze', {
@@ -1042,6 +1050,8 @@ async function runAnalysis() {
   } catch(err) {
     showError('Network error: ' + err.message + '\n\nIs the server running at ' + apiBase + '?');
   } finally {
+    clearTimeout(warmupTimer);
+    warmupMsg.style.display = 'none';
     btn.disabled = false;
     btn.classList.remove('loading');
   }
