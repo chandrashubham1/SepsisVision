@@ -456,44 +456,69 @@ textarea#json-input:focus { border-color: var(--accent); }
 
 /* ── Print styles ── */
 @media print {
-  /* Preserve all background colors and gradients */
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-
-  /* Hide UI chrome only */
+  @page { margin: 20mm 18mm; }
   .topbar, .left-panel, .report-actions, .action-btn,
-  .narrative-toggle { display: none !important; }
-
-  /* Remove overflow clipping so every section renders fully */
-  html, body { overflow: visible !important; height: auto !important; }
-  body { font-size: 11pt; }
+  .phase-strip, .stream-cursor, #empty-state { display: none !important; }
+  html, body { overflow: visible !important; height: auto !important;
+    font-family: Georgia, 'Times New Roman', serif; font-size: 10.5pt; color: #111; }
   .layout { display: block; overflow: visible !important; height: auto !important; }
-  .right-panel { padding: 16px 24px; overflow: visible !important; height: auto !important; }
-
-  /* Ensure results and all subsections show */
+  .right-panel { padding: 0; overflow: visible !important; height: auto !important; }
   #results { display: flex !important; flex-direction: column; }
   #xai-section, #rules-section, #icd-section { display: block !important; }
-
-  /* Page-break hygiene */
+  #narrative-section { display: block !important; }
+  .narrative-card { display: block !important; max-height: none !important;
+    overflow: visible !important; background: white !important; border: 1pt solid #ddd !important;
+    padding: 8pt !important; font-family: Georgia, serif !important; white-space: normal !important; }
+  .narrative-toggle { display: block !important; background: none !important; border: none !important;
+    border-bottom: 1pt solid #ccc !important; border-radius: 0 !important; padding: 4pt 0 6pt !important;
+    font-family: Georgia, serif !important; font-size: 10.5pt !important; font-weight: 700 !important; color: #000 !important; }
+  .narrative-toggle-icon, .phase-status { display: none !important; }
   .info-card, .xai-card, .rule-row { break-inside: avoid; }
-  .section-title { break-after: avoid; }
+  .section-title { break-after: avoid; font-family: Georgia, serif !important;
+    color: #000 !important; border-bottom: 1pt solid #999 !important; }
   .info-grid { grid-template-columns: 1fr 1fr; }
-
-  /* Print header */
   .print-header { display: flex !important; }
+  .print-biomarkers-section { display: block !important; }
   a { text-decoration: none; color: inherit; }
+  .score-band { background: #f8f8f8 !important; border: 1pt solid #ccc !important; }
+  .info-card { background: #f8f8f8 !important; border: 1pt solid #ddd !important; }
+  .xai-card { background: white !important; border: 1pt solid #ddd !important; }
 }
 .print-header {
   display: none;
-  border-bottom: 2pt solid var(--accent); margin-bottom: 20pt; padding-bottom: 10pt;
-  align-items: center; gap: 12pt;
+  border-bottom: 2pt solid #1a3c6e; margin-bottom: 14pt; padding-bottom: 10pt;
+  align-items: flex-start; gap: 14pt; justify-content: space-between;
 }
-.print-header-logo {
-  width: 36pt; height: 36pt; background: var(--accent-bg);
-  border-radius: 8pt; display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
+.print-header-logo { height: 30pt; width: auto; flex-shrink: 0; }
+.print-header-text { flex: 1; }
+.print-header-text h1 { font-size: 13pt; margin: 0 0 2pt; color: #1a3c6e; font-weight: 700;
+  font-family: Georgia, serif; }
+.print-header-text p  { font-size: 8pt; color: #555; margin: 0; }
+.print-header-badge {
+  font-size: 7pt; color: #a00; border: 1pt solid #a00; padding: 2pt 5pt;
+  border-radius: 2pt; white-space: nowrap; flex-shrink: 0; margin-top: 3pt;
+  font-family: Arial, sans-serif; letter-spacing: 0.03em; font-weight: 600;
 }
-.print-header-text h1 { font-size: 15pt; margin: 0 0 2pt; color: var(--fg); font-weight: 700; }
-.print-header-text p  { font-size: 8.5pt; color: var(--fg-dim); margin: 0; }
+/* Print-only biomarkers table */
+.print-biomarkers-section { display: none; margin: 14pt 0; break-inside: avoid; }
+.print-bm-title {
+  font-size: 9.5pt; font-weight: 700; color: #1a3c6e;
+  border-bottom: 1pt solid #999; padding-bottom: 3pt; margin-bottom: 6pt;
+  font-family: Georgia, serif; text-transform: uppercase; letter-spacing: 0.06em;
+}
+.print-bm-table {
+  width: 100%; border-collapse: collapse; font-size: 8.5pt; font-family: Arial, sans-serif;
+}
+.print-bm-table th {
+  background: #1a3c6e !important; color: white !important; padding: 3pt 5pt; text-align: left;
+  font-weight: 600;
+}
+.print-bm-table td { padding: 2.5pt 5pt; border-bottom: 0.5pt solid #e0e0e0; }
+.print-bm-table tr.tipping-row td {
+  background: #fff0f0 !important; font-weight: 700; color: #b00 !important;
+}
+.print-bm-table tr.tipping-row td:first-child::before { content: "▶ "; }
 
 /* ── Responsive ── */
 @media (max-width: 860px) {
@@ -616,16 +641,13 @@ textarea#json-input:focus { border-color: var(--accent); }
 
       <!-- Print-only header -->
       <div class="print-header">
-        <div class="print-header-logo">
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-            <polyline points="1,10 4,10 5,5 6,15 7,8 8,11 9,10 13,10 14,4 15,16 16,10 19,10"
-              stroke="#0284c7" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </div>
+        <img class="print-header-logo" src="/static/sutra-logo.png" alt="Sutra · SepsisAI">
         <div class="print-header-text">
-          <h1>SepsisAI · BEI Analysis Report</h1>
+          <h1>SepsisAI BEI Analysis Report</h1>
           <p id="print-meta"></p>
+          <p style="font-size:7pt;color:#666;margin-top:2pt">Adnexus Biotechnologies Inc · BEI Module v4</p>
         </div>
+        <div class="print-header-badge">INVESTIGATIONAL — Not FDA Cleared</div>
       </div>
 
       <!-- Report header -->
@@ -677,6 +699,19 @@ textarea#json-input:focus { border-color: var(--accent); }
           <div class="info-card-value" id="r-confidence">—</div>
           <div class="info-card-sub" id="r-auc"></div>
         </div>
+      </div>
+
+      <!-- Print-only biomarkers table (populated by renderPrintBiomarkers) -->
+      <div class="print-biomarkers-section" id="print-biomarkers-section">
+        <div class="print-bm-title">Submitted Patient Biomarkers</div>
+        <table class="print-bm-table">
+          <thead>
+            <tr>
+              <th>Marker</th><th>Value</th><th>Unit</th><th>TC Score</th><th>Tier</th><th>Direction</th>
+            </tr>
+          </thead>
+          <tbody id="print-bm-tbody"></tbody>
+        </table>
       </div>
 
       <!-- xAI / Energy profile -->
@@ -966,11 +1001,13 @@ function toggleNarrative() {
   card.style.display = _narrativeExpanded ? 'block' : 'none';
 
   if (_narrativeExpanded) {
-    // Flush buffer to DOM
+    // Flush buffer to DOM as rendered markdown
     const textEl = document.getElementById('narrative-text');
-    textEl.textContent = _narrativeBuffer.join('');
-    if (_narrativeError && !_narrativeBuffer.length) {
-      textEl.textContent = _narrativeError;
+    const raw = _narrativeBuffer.join('');
+    if (raw) {
+      textEl.innerHTML = renderMarkdown(raw);
+    } else if (_narrativeError) {
+      textEl.innerHTML = '<span style="color:#dc2626">' + _narrativeError + '</span>';
     }
     // Show blinking cursor only if still streaming
     cursor.style.display = _narrativeDone ? 'none' : 'inline-block';
@@ -1067,9 +1104,9 @@ async function runNarrativeStream(payload, apiBase, apiKey) {
             } else if (lastEvent === 'token') {
               const text = evt.text || '';
               _narrativeBuffer.push(text);
-              // If card is expanded, render live
+              // If card is expanded, re-render as markdown
               if (_narrativeExpanded) {
-                textEl.textContent += text;
+                textEl.innerHTML = renderMarkdown(_narrativeBuffer.join(''));
                 const card = document.getElementById('narrative-card');
                 card.scrollTop = card.scrollHeight;
               }
@@ -1089,6 +1126,9 @@ async function runNarrativeStream(payload, apiBase, apiKey) {
               statusEl.textContent = '✓ Ready — click to view';
               statusEl.className = 'phase-status ready';
               setPip('narrative', 'done');
+              if (_narrativeExpanded) {
+                textEl.innerHTML = renderMarkdown(_narrativeBuffer.join(''));
+              }
             }
           } catch(_) { /* skip malformed line */ }
         }
@@ -1147,17 +1187,19 @@ function renderResults(d, payload) {
   const tip = bei.tipping_marker || d.tipping_marker;
   document.getElementById('r-tipping').textContent = tip ? `↑ ${tip}` : '';
 
-  // Phenotype
-  const pheno = d.phenotype || d.immune_phenotype || '';
+  // Phenotype — prefer d.xai_report (Pydantic model) over top-level fallbacks
+  const pheno = d.xai_report?.phenotype || d.phenotype || d.immune_phenotype || '';
   const pEl   = document.getElementById('r-phenotype');
   pEl.textContent = pheno || '—';
   pEl.className = 'info-card-value ' + phenoClass(pheno);
+  const phenoConf = d.xai_report?.phenotype_confidence || d.phenotype_confidence;
+  const phenoSub  = d.xai_report?.phenotype_subtype    || d.phenotype_subtype;
   document.getElementById('r-pheno-sub').textContent =
-    (d.phenotype_confidence ? `Confidence: ${d.phenotype_confidence}` : '') +
-    (d.phenotype_subtype ? ` · ${d.phenotype_subtype}` : '');
+    (phenoConf ? `Confidence: ${phenoConf}` : '') +
+    (phenoSub  ? ` · ${phenoSub}`  : '');
 
   // Confidence
-  document.getElementById('r-confidence').textContent = d.phenotype_confidence || d.confidence || '—';
+  document.getElementById('r-confidence').textContent = d.xai_report?.phenotype_confidence || d.phenotype_confidence || d.confidence || '—';
   document.getElementById('r-auc').textContent =
     (d.module === 'A' || d.module === 'a') ? 'AUC 0.812'
     : (d.module === 'B' ? 'KILL-4 panel — validation pending' : '');
@@ -1170,6 +1212,9 @@ function renderResults(d, payload) {
 
   // ICD-10
   renderICD(d);
+
+  // Print biomarkers table (print only — no-op on screen)
+  renderPrintBiomarkers(d, payload);
 
   // Scroll results into view
   rEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1278,71 +1323,146 @@ function renderRules(d) {
   });
 }
 
+// ── Markdown renderer (minimal — handles BEI narrative structure) ──
+function renderMarkdown(text) {
+  if (!text) return '';
+  const escaped = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const lines = text.split('\n');
+  let html = '';
+  let inPara = false;
+  const flush = () => { if (inPara) { html += '</p>'; inPara = false; } };
+  lines.forEach(raw => {
+    const line = raw;
+    // H1
+    if (/^# /.test(line)) {
+      flush();
+      html += `<h1 style="font-size:1.15em;font-weight:700;margin:1em 0 .4em;border-bottom:1px solid #ccc;padding-bottom:.2em">${escaped(line.slice(2))}</h1>`;
+    // H2
+    } else if (/^## /.test(line)) {
+      flush();
+      html += `<h2 style="font-size:1em;font-weight:700;margin:.9em 0 .3em;text-transform:uppercase;letter-spacing:.04em;color:#1a3c6e">${escaped(line.slice(3))}</h2>`;
+    // H3
+    } else if (/^### /.test(line)) {
+      flush();
+      html += `<h3 style="font-size:.95em;font-weight:600;margin:.7em 0 .2em">${escaped(line.slice(4))}</h3>`;
+    // HR
+    } else if (/^---+$/.test(line.trim())) {
+      flush();
+      html += '<hr style="border:none;border-top:1px solid #ddd;margin:.8em 0">';
+    // Blank line — paragraph break
+    } else if (line.trim() === '') {
+      flush();
+    // Bullet list
+    } else if (/^[-*] /.test(line)) {
+      flush();
+      const content = line.slice(2).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+      html += `<p style="margin:.15em 0 .15em 1.2em;text-indent:-.8em">&bull; ${content}</p>`;
+    // Numbered list
+    } else if (/^\d+\. /.test(line)) {
+      flush();
+      const content = line.replace(/^\d+\. /, '').replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+      html += `<p style="margin:.15em 0 .15em 1.2em;text-indent:-.8em">&#8226; ${content}</p>`;
+    // Normal text — accumulate into paragraph
+    } else {
+      const content = escaped(line).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\*(.+?)\*/g, '<em>$1</em>');
+      if (!inPara) { html += '<p style="margin:.35em 0;line-height:1.6">'; inPara = true; }
+      else html += ' ';
+      html += content;
+    }
+  });
+  flush();
+  return html;
+}
+
+// ── Print biomarkers table ──
+function renderPrintBiomarkers(d, payload) {
+  const tbody = document.getElementById('print-bm-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  const attribs = d.xai_report?.marker_attributions || d.xai?.marker_attributions || [];
+  if (!attribs.length) return;
+
+  // Sort: tipping marker first, then by |tc| descending
+  const primary = d.xai_report?.top_driver?.marker || d.bei?.tipping_marker || d.tipping_marker || '';
+  const sorted = [...attribs].sort((a, b) => {
+    if (a.marker === primary) return -1;
+    if (b.marker === primary) return 1;
+    return Math.abs(b.tc) - Math.abs(a.tc);
+  });
+
+  const UNITS = {
+    'D-dimer':'ng/mL','SOFA':'score','Lactate':'mmol/L','PTX3':'ng/mL',
+    'Urea':'mmol/L','IL-8':'pg/mL','IL-10':'pg/mL','GCS':'score',
+    'sIL-1R2':'ng/mL','CRP':'mg/L','PaO2_FiO2':'ratio','IL-6':'pg/mL',
+    'MAP':'mmHg','Platelets':'×10⁹/L','IL-18':'pg/mL','IL-1ra':'pg/mL',
+    'TNF-alpha':'pg/mL','Creatinine':'μmol/L'
+  };
+
+  sorted.forEach(a => {
+    const isTipping = a.marker === primary || a.is_primary;
+    const tr = document.createElement('tr');
+    if (isTipping) tr.className = 'tipping-row';
+    const val = a.raw_value != null ? Number(a.raw_value).toFixed(2) : (a.raw_str || '—');
+    const unit = UNITS[a.marker] || '';
+    const tc   = a.tc != null ? (a.tc >= 0 ? '+' : '') + a.tc.toFixed(4) : '—';
+    const tier = a.tier || '—';
+    const dir  = a.direction || '—';
+    tr.innerHTML = `<td>${a.marker}</td><td>${val}</td><td>${unit}</td><td>${tc}</td><td>${tier}</td><td>${dir}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
 // ── ICD-10 ──
 function renderICD(d) {
   const container = document.getElementById('icd-content');
   container.innerHTML = '';
 
+  // New format: d.xai_report.icd_codes = [{code, description}, ...]
+  const icdArray = d.xai_report?.icd_codes || [];
+  if (icdArray.length) {
+    const chips = document.createElement('div');
+    chips.className = 'icd-chips';
+    icdArray.forEach(item => {
+      const chip = document.createElement('div');
+      chip.className = 'icd-chip';
+      chip.innerHTML = `<span class="icd-code">${item.code || ''}</span><span>${item.description || ''}</span>`;
+      chips.appendChild(chip);
+    });
+    container.appendChild(chips);
+    return;
+  }
+
+  // Legacy fallback: nested object
   const icd = d.icd10_codes || d.icd_codes || d.icd10 || {};
   if (!Object.keys(icd).length) {
     container.innerHTML = '<div style="color:var(--fg-dim);font-size:12px;font-family:var(--mono)">ICD-10 codes not available</div>';
     return;
   }
 
-  const groups = {
-    'Marker-level': icd.marker_level || icd.markers || {},
-    'Phenotype-level': icd.phenotype_level ? { [d.phenotype || 'phenotype']: icd.phenotype_level } : {},
-    'Rule-outcome': icd.rule_level || icd.rules || {}
-  };
-
-  Object.entries(groups).forEach(([label, codes]) => {
-    if (!codes || !Object.keys(codes).length) return;
-
-    const group = document.createElement('div');
-    group.innerHTML = `<div class="icd-group-label">${label}</div>`;
-    const chips = document.createElement('div');
-    chips.className = 'icd-chips';
-
-    Object.entries(codes).forEach(([key, val]) => {
-      const vals = Array.isArray(val) ? val : [val];
-      vals.forEach(v => {
-        if (!v) return;
-        const isObj = typeof v === 'object';
-        const code  = isObj ? (v.code || v.icd_code || JSON.stringify(v)) : String(v);
-        const desc2  = isObj ? (v.description || v.desc || '') : '';
-        const chip = document.createElement('div');
-        chip.className = 'icd-chip';
-        chip.innerHTML = `<span class="icd-code">${code}</span>${desc2 ? '<span>' + desc2 + '</span>' : '<span>' + key + '</span>'}`;
-        chips.appendChild(chip);
-      });
+  const chips = document.createElement('div');
+  chips.className = 'icd-chips';
+  const flatten = (obj, prefix='') => {
+    Object.entries(obj).forEach(([k, v]) => {
+      if (typeof v === 'object' && v !== null && !Array.isArray(v)) {
+        flatten(v, prefix + k + '.');
+      } else {
+        const vals = Array.isArray(v) ? v : [v];
+        vals.forEach(code => {
+          if (!code) return;
+          const isObj = typeof code === 'object';
+          const codeStr = isObj ? (code.code || JSON.stringify(code)) : String(code);
+          const descStr = isObj ? (code.description || code.desc || '') : '';
+          const chip = document.createElement('div');
+          chip.className = 'icd-chip';
+          chip.innerHTML = `<span class="icd-code">${codeStr}</span><span>${descStr || prefix + k}</span>`;
+          chips.appendChild(chip);
+        });
+      }
     });
-    group.appendChild(chips);
-    container.appendChild(group);
-  });
-
-  if (!container.children.length) {
-    // Flat structure fallback
-    const chips = document.createElement('div');
-    chips.className = 'icd-chips';
-    const flatten = (obj, prefix='') => {
-      Object.entries(obj).forEach(([k, v]) => {
-        if (typeof v === 'object' && v !== null && !Array.isArray(v)) {
-          flatten(v, prefix + k + '.');
-        } else {
-          const vals = Array.isArray(v) ? v : [v];
-          vals.forEach(code => {
-            if (!code) return;
-            const chip = document.createElement('div');
-            chip.className = 'icd-chip';
-            chip.innerHTML = `<span class="icd-code">${code}</span><span>${prefix}${k}</span>`;
-            chips.appendChild(chip);
-          });
-        }
-      });
-    };
-    flatten(icd);
-    container.appendChild(chips);
-  }
+  };
+  flatten(icd);
+  container.appendChild(chips);
 }
 
 // ── Actions ──
@@ -1365,6 +1485,20 @@ function fallbackCopy(text) {
 }
 
 function printReport() {
+  // Render narrative as markdown HTML and make it visible before printing
+  const textEl         = document.getElementById('narrative-text');
+  const narrativeCard  = document.getElementById('narrative-card');
+  const narrativeSect  = document.getElementById('narrative-section');
+  if (_narrativeBuffer && _narrativeBuffer.length) {
+    textEl.innerHTML = renderMarkdown(_narrativeBuffer.join(''));
+    if (narrativeCard)  narrativeCard.style.display  = 'block';
+    if (narrativeSect)  narrativeSect.style.display  = 'block';
+  }
+  // Set print-meta timestamp
+  const pmEl = document.getElementById('print-meta');
+  if (pmEl && !pmEl.textContent) {
+    pmEl.textContent = 'Printed ' + new Date().toLocaleString() + ' · INVESTIGATIONAL';
+  }
   window.print();
 }
 
