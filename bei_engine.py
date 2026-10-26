@@ -63,30 +63,41 @@ BEI_COHORT_ENERGY_MEANS: Dict[str, float] = {
 
 # Tipping tier + action per marker
 BEI_TIPPING_TIERS: Dict[str, Tuple[str, str]] = {
-    "Lactate":    ("KILL",     "~63% tipping mortality | Haemodynamic resuscitation — vasopressor, MAP target ≥65 mmHg, volume optimisation"),
-    "D-dimer":    ("KILL",     "~55% tipping mortality | DIC protocol — FFP assessment, anticoagulation review, coagulation panel"),
-    "SOFA":       ("KILL",     "~50% tipping mortality | Multi-organ support escalation — ventilator, vasopressor, renal replacement review"),
-    "PTX3":       ("KILL",     "~47% tipping mortality | Endothelial protection — aggressive haemodynamic support, early vasopressor, vascular monitoring"),
-    "PaO2_FiO2":  ("MODERATE", "~33% tipping mortality | Respiratory support optimisation — lung-protective ventilation, prone positioning review"),
-    "IL-8":       ("MODERATE", "~28% tipping mortality | Neutrophil-driven — antibiotic breadth reassessment, source control review"),
-    "Urea":       ("MODERATE", "~25% tipping mortality | Catabolism/renal — renal support review, nutritional optimisation, protein intake"),
-    "IL-10":      ("MODERATE", "~25% tipping mortality | Immunoparalysis — avoid immunosuppressants, evaluate immunostimulant candidacy"),
-    "IL-1ra":     ("MODERATE", "~25% estimated        | Futile counter-regulation — avoid steroid escalation, reassess anti-inflammatory therapy"),
-    "TNF-alpha":  ("MODERATE", "~28% estimated        | Macrophage amplification — sustained anti-inflammatory burden, source control priority"),
-    "Creatinine": ("MODERATE", "~25% estimated        | Renal failure — CRRT assessment, fluid balance review, nephrotoxin avoidance"),
-    "sIL-1R2":    ("NOISE",    "~20% tipping mortality | Late NLRP3 — serial monitoring Day 5; IL-1 blockade candidacy assessment"),
-    "CRP":        ("NOISE",    "~13% tipping mortality | Recoverable acute phase — antibiotic guided serial monitoring, observe"),
-    "IL-6":       ("BENIGN",   "~0% independent tipping | Downstream effector — present across all phenotypes; does not independently drive death"),
-    "MAP":        ("BENIGN",   "~0% independent tipping | Maintain haemodynamic targets per protocol"),
-    "GCS":        ("BENIGN",   "~0% — GCS ≤14 triggers HIGH-RISK ALARM (67% mortality); any consciousness impairment is clinically significant"),
-    "Platelets":  ("BENIGN",   "~0% independent tipping | Thrombocytopaenia monitoring; secondary to primary coagulopathy"),
-    "IL-18":      ("BENIGN",   "~0% independent tipping | Informationally redundant conditional on sIL-1R2; use sIL-1R2 preferentially"),
+    # Tier assignments and tipping-associated mortality from Table 2, Chandra 2026 (JAIKE-2026-0015)
+    # Tier cutoffs: KILL ≥40%, MODERATE 25–40%, NOISE 20–25%, BENIGN <20%
+    # NOTE: No marker fell in the NOISE band in this cohort (Section 4.4)
+    # Tipping mortality = 90-day mortality among patients for whom this marker IS the primary tipping dimension
+    # ── KILL tier (tipping mortality ≥40%) ──────────────────────────────────────
+    "GCS":       ("KILL",     "67% tipping mortality (N=3) | GCS ≤14: 67% overall mortality (16/24); any consciousness impairment triggers HIGH-RISK ALARM"),
+    "D-dimer":   ("KILL",     "50% tipping mortality (N=8) | DIC protocol — ISTH scoring, anticoagulation review, coagulation panel q12h"),
+    "SOFA":      ("KILL",     "46% tipping mortality (N=13) | Multi-organ support escalation — ventilator, vasopressor, renal replacement review"),
+    "PaO2_FiO2": ("KILL",     "45% tipping mortality (N=11) | Respiratory failure — lung-protective ventilation, prone positioning review, FiO2 titration"),
+    "Lactate":   ("KILL",     "44% tipping mortality (N=9) | Haemodynamic resuscitation — MAP ≥65 mmHg, vasopressor titration, volume assessment"),
+    "PTX3":      ("KILL",     "41% tipping mortality (N=17) | Endothelial collapse — aggressive haemodynamic support, early vasopressor, vascular monitoring"),
+    # ── MODERATE tier (tipping mortality 25–40%) ────────────────────────────────
+    "IL-8":      ("MODERATE", "33% tipping mortality (N=3) | Neutrophil-driven — antibiotic breadth reassessment, source control review"),
+    "Urea":      ("MODERATE", "31% tipping mortality (N=13) | Catabolism/renal — protein delivery ≥1.5 g/kg/day, renal support review, nitrogen balance monitoring"),
+    "IL-10":     ("MODERATE", "29% tipping mortality (N=7) | Immunoparalysis — avoid immunosuppressants; persistently elevated IL-10 signals exhaustion, not reserve"),
+    # ── BENIGN tier (tipping mortality <20%; includes markers never primary tipping in cohort) ──
+    "CRP":       ("BENIGN",   "8% tipping mortality (N=12) | Recoverable acute phase — antibiotic-guided serial monitoring, observe"),
+    "MAP":       ("BENIGN",   "0% tipping mortality (N=5) | Maintain haemodynamic targets per protocol"),
+    "sIL-1R2":   ("BENIGN",   "0% tipping mortality (N=3) | High entropy weight (0.061) but low tipping mortality; NLRP3 monitoring — serial Day 5 reassessment"),
+    "Platelets": ("BENIGN",   "0% tipping mortality (N=1) | Thrombocytopaenia monitoring; secondary to primary coagulopathy"),
+    # Not classified — never primary tipping dimension in Chandra 2026 cohort (N=0); tier unassigned
+    "IL-1ra":    ("BENIGN",   "N=0 tipping in cohort (unclassified) | Futile counter-regulation — avoid steroid escalation"),
+    "TNF-alpha": ("BENIGN",   "N=0 tipping in cohort (unclassified) | Macrophage amplification marker — does not independently drive death in this dataset"),
+    "IL-6":      ("BENIGN",   "N=0 tipping in cohort (unclassified) | Prognostically redundant conditional on sIL-1R2, IL-10, PTX3 (Riedemann 2003)"),
+    "IL-18":     ("BENIGN",   "N=0 tipping in cohort (unclassified) | Informationally redundant conditional on sIL-1R2 (AUC 0.726 vs 0.610); use sIL-1R2 preferentially"),
+    "Creatinine":("BENIGN",   "Not in Chandra 2026 17-marker panel | Use Urea as renal catabolic marker; Creatinine contextual only"),
 }
 
 BEI_ZONES: Dict[str, Tuple[float, float, str]] = {
-    "VERY_LOW":   (0.00, 0.55, "50% 90-day mortality — catastrophic multi-system collapse; all KILL dimensions likely active"),
-    "AT_RISK":    (0.55, 0.67, "7% mortality — biologically contested; tipping intervention window is NOW; most actionable zone"),
-    "SUFFICIENT": (0.67, 1.00, "24% mortality — energy reserve present; late-mortality phenotype risk (PTX3/sIL-1R2 trajectory)"),
+    # Thresholds = 33rd and 67th percentiles of out-of-fold BEI score in analytical cohort
+    # Mortality figures = Kaplan-Meier tertile stratification, Fig 10, Chandra 2026 (JAIKE-2026-0015)
+    # n=35 per tertile; log-rank p<0.001
+    "VERY_LOW":   (0.00, 0.60, "71% 90-day mortality — catastrophic multi-system collapse; all KILL dimensions likely active"),
+    "AT_RISK":    (0.60, 0.71, "17% mortality — biologically contested; tipping intervention window is NOW; most actionable zone"),
+    "SUFFICIENT": (0.71, 1.00, "14% mortality — energy reserve present; late-mortality phenotype risk (PTX3/sIL-1R2 trajectory)"),
 }
 
 GH5_SIGNATURE = {
@@ -97,12 +108,27 @@ GH5_SIGNATURE = {
 }
 
 BEI_PERFORMANCE = {
-    "auc_entropy_weighted": 0.812, "auc_equal_weighted": 0.796,
-    "auc_no_lactate": 0.805, "auc_gh5_5fold": 0.779, "auc_gh5_loo": 0.800,
-    "Q1_mortality": 0.90, "Q2_mortality": 0.43, "Q3_Q4_mortality": 0.10,
-    "Q5_mortality": 0.19, "cohort_baseline": 0.267,
+    # AUC values — Chandra et al. 2026 (JAIKE-2026-0015), Section 4.1
+    # Primary figure: out-of-fold 5-fold stratified CV on analytical cohort n=105
+    # Complete-case sensitivity (n=33, all 17 markers): AUC=0.885 (95% CI 0.752–0.981)
+    "auc_entropy_weighted": 0.793,   # Fig 3B; primary out-of-fold result
+    "auc_equal_weighted":   0.799,   # Fig 3B; entropy weighting conferred no advantage over equal-weighted
+    "auc_no_lactate":       0.805,   # Section 4.2; 16-marker panel (Lactate excluded for all patients)
+    "auc_gh5_5fold":        0.779,   # Section 4.3; Golden Hour Signature 5-fold CV
+    "auc_gh5_loo":          0.786,   # Section 4.3; Golden Hour Signature LOO-CV
+    # Quintile mortality — Fig 3C; n=21 per quintile; out-of-fold BEI score
+    "Q1_mortality": 0.86,   # bottom quintile (lowest biological reserve)
+    "Q2_mortality": 0.38,
+    "Q3_Q4_mortality": 0.14,  # Section 4.1: "declining to 14% in Q3 and Q4"
+    "Q5_mortality": 0.19,   # top quintile; Q5 anomaly discussed in Section 4.2 (Lactate missingness)
+    # Zone (tertile) survival — Fig 10 KM; thresholds = 33rd and 67th percentiles of out-of-fold score
+    # Very Low (<0.60): 71% mortality  |  At-Risk (0.60–0.71): 17%  |  Sufficient (≥0.71): 14%
+    "tier_very_low_mortality":  0.71,  # n=35; Fig 10
+    "tier_at_risk_mortality":   0.17,  # n=35; Fig 10
+    "tier_sufficient_mortality": 0.14, # n=35; Fig 10
+    "cohort_baseline": 0.343,   # 36/105 deaths — analytical cohort mortality rate; Fig 2
     "n_patients": 135, "n_events": 36,
-    "cohort": "Davoudian et al. 2023, PLOS ONE",
+    "cohort": "Chandra et al. 2026, J Artif Intell Knowl Eng (JAIKE-2026-0015); source data: Davoudian et al. 2022, PLOS ONE",
 }
 
 # ── Module B — KILL-4 panel ───────────────────────────────────────────────────
@@ -208,11 +234,12 @@ def compute_bei(
     tipping_marker = min(tipping_contributions, key=tipping_contributions.get)
     tier_info = BEI_TIPPING_TIERS.get(tipping_marker, ("UNKNOWN", "Assess per protocol"))
 
-    # Zone classification — thresholds from Module A calibration
-    # Module B note: thresholds not independently validated for KILL-4 distribution
-    if bei_score < 0.55:
+    # Zone classification — thresholds = 33rd/67th percentiles of out-of-fold BEI score
+    # Source: Chandra 2026 (JAIKE-2026-0015), Fig 10 KM tertile boundaries
+    # Module B note: thresholds applied from Module A calibration; not independently validated
+    if bei_score < 0.60:
         zone, zone_detail = "VERY_LOW",   BEI_ZONES["VERY_LOW"][2]
-    elif bei_score < 0.67:
+    elif bei_score < 0.71:
         zone, zone_detail = "AT_RISK",    BEI_ZONES["AT_RISK"][2]
     else:
         zone, zone_detail = "SUFFICIENT", BEI_ZONES["SUFFICIENT"][2]
@@ -394,6 +421,9 @@ def build_clinical_flags(bei: dict, raw: Dict[str, Optional[float]]) -> List[str
     # U:Cr ratio flag
     urea  = raw.get("Urea", 0) or 0
     creat = raw.get("Creatinine", 1) or 1
+    # Unit guard: creatinine < 20 μmol/L is biologically impossible; likely mg/dL entry
+    if 0 < creat < 20:
+        creat = round(creat * 88.4, 1)
     creat_si = creat / 1000.0
     if creat_si > 0:
         uc = round(urea / creat_si, 1)
