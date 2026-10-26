@@ -356,6 +356,11 @@ textarea#json-input:focus { border-color: var(--accent); }
 .xai-row {
   display: grid; grid-template-columns: 90px 1fr 60px;
   gap: 10px; align-items: center; margin-bottom: 8px;
+  opacity: 1; transform: translateY(0);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+.xai-row.xai-pending {
+  opacity: 0; transform: translateY(8px);
 }
 .xai-marker { font-family: var(--mono); font-size: 12px; color: var(--fg); }
 .xai-bar-wrap { background: var(--bg-soft); border-radius: 3px; height: 6px; overflow: hidden; }
@@ -1339,19 +1344,26 @@ function renderXAI(d) {
 
   const maxVal = Math.max(...sorted.map(([,v]) => Math.abs(v)));
 
-  sorted.forEach(([marker, val]) => {
+  sorted.forEach(([marker, val], i) => {
     const pct = maxVal > 0 ? Math.abs(val) / maxVal * 100 : 0;
     const tier = (tiers[marker] || '').toUpperCase();
     const barClass = tier === 'KILL' ? 'kill' : tier === 'MODERATE' ? 'moderate' : tier === 'NOISE' ? 'noise' : '';
 
     const row = document.createElement('div');
-    row.className = 'xai-row';
+    row.className = 'xai-row xai-pending';
     row.innerHTML = `
       <div class="xai-marker">${marker}</div>
-      <div class="xai-bar-wrap"><div class="xai-bar ${barClass}" style="width:${pct.toFixed(1)}%"></div></div>
+      <div class="xai-bar-wrap"><div class="xai-bar ${barClass}" style="width:0%"></div></div>
       <div class="xai-val">${val > 0 ? '+' : ''}${val.toFixed(5)}</div>
     `;
     container.appendChild(row);
+
+    // Stagger reveal: fade+slide in, then grow bar
+    setTimeout(() => {
+      row.classList.remove('xai-pending');
+      const bar = row.querySelector('.xai-bar');
+      if (bar) bar.style.width = pct.toFixed(1) + '%';
+    }, i * 70);
   });
 }
 
