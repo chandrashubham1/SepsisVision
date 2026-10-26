@@ -1012,9 +1012,11 @@ async function runAnalysis() {
   const apiBase = document.getElementById('api-url').value.replace(/\/$/, '');
   const apiKey  = document.getElementById('api-key').value.trim();
 
+  // ── Clear all previous results immediately ───────────────────────────────────
+  clearResults();
+
   // ── Show phase strip immediately; fire BOTH calls concurrently ───────────────
   document.getElementById('phase-strip').style.display = 'flex';
-  document.getElementById('narrative-section').style.display = 'none';
   setPip('bei',       'live');
   setPip('narrative', 'live');
 
@@ -1251,6 +1253,44 @@ async function runNarrativeStream(payload, apiBase, apiKey) {
 }
 
 // ── Render results ──
+// ── Clear all result fields before a new run ─────────────────────────────────
+function clearResults() {
+  // Text / label fields
+  document.getElementById('r-patient').textContent    = '';
+  document.getElementById('r-meta').textContent       = '';
+  document.getElementById('r-score').textContent      = '—';
+  document.getElementById('r-zone-detail').textContent = '';
+  document.getElementById('r-tipping').textContent    = '';
+  document.getElementById('r-coverage').textContent   = '';
+  document.getElementById('r-module').textContent     = '';
+  const phEl = document.getElementById('r-phenotype');
+  phEl.textContent = '—'; phEl.className = 'info-card-value';
+  document.getElementById('r-pheno-sub').textContent  = '';
+  document.getElementById('r-confidence').textContent = '—';
+  document.getElementById('r-auc').textContent        = '';
+  const printMeta = document.getElementById('print-meta');
+  if (printMeta) printMeta.textContent = '';
+
+  // Zone badge + band
+  const badge = document.getElementById('r-zone-badge');
+  badge.textContent = '—'; badge.className = 'zone-badge';
+  document.getElementById('score-band').className = 'score-band';
+
+  // Dynamic content panels
+  document.getElementById('xai-rows').innerHTML    = '';
+  document.getElementById('rules-grid').innerHTML  = '';
+  document.getElementById('icd-content').innerHTML = '';
+
+  // Narrative
+  const nText = document.getElementById('narrative-text');
+  if (nText) nText.textContent = '';
+  const cursor = document.getElementById('stream-cursor');
+  if (cursor) cursor.style.display = 'none';
+  document.getElementById('narrative-section').style.display = 'none';
+
+  lastResult = null;
+}
+
 function renderResults(d, payload) {
   // Show results, hide empty state
   document.getElementById('empty-state').style.display = 'none';
