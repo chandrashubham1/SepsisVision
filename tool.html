@@ -742,9 +742,9 @@ textarea#json-input:focus { border-color: var(--accent); }
 
       <!-- Two-phase progress strip (concurrent) -->
       <div class="phase-strip" id="phase-strip" style="display:none">
-        <span class="phase-pip idle" id="pip-bei">① What's Failing</span>
+        <span class="phase-pip idle" id="pip-narrative">① AI Narrative</span>
         <span style="opacity:.3">‖</span>
-        <span class="phase-pip idle" id="pip-narrative">② AI Narrative</span>
+        <span class="phase-pip idle" id="pip-bei">② What's Failing</span>
       </div>
       <p id="warmup-msg" style="display:none;font-size:11px;color:var(--fg-dim);margin:0 0 10px;text-align:center">
         ⏳ Server warming up — this may take 30–60 s on first use
@@ -793,6 +793,18 @@ textarea#json-input:focus { border-color: var(--accent); }
         </table>
       </div>
 
+      <!-- Clinical Narrative — streamed first; appears before numbers load -->
+      <div id="narrative-section" style="margin-top:24px;display:none">
+        <button class="narrative-toggle" id="narrative-toggle" onclick="toggleNarrative()">
+          <span class="narrative-toggle-icon" id="narrative-toggle-icon">▼</span>
+          Clinical Narrative
+          <span class="phase-status" id="narrative-status" style="margin-left:auto">● Streaming…</span>
+        </button>
+        <div class="narrative-card" id="narrative-card" style="margin-top:8px">
+          <span id="narrative-text"></span><span class="stream-cursor" id="stream-cursor">▌</span>
+        </div>
+      </div>
+
       <!-- xAI / Energy profile -->
       <div id="xai-section" style="margin-top:20px">
         <div class="section-title">xAI Biomarker Contributions</div>
@@ -812,18 +824,6 @@ textarea#json-input:focus { border-color: var(--accent); }
       <div id="icd-section" style="margin-top:20px">
         <div class="section-title">ICD-10-CM Codes</div>
         <div class="icd-section" id="icd-content"></div>
-      </div>
-
-      <!-- Part 2: Clinical Narrative (auto-expanded, live stream) -->
-      <div id="narrative-section" style="margin-top:24px;display:none">
-        <button class="narrative-toggle" id="narrative-toggle" onclick="toggleNarrative()">
-          <span class="narrative-toggle-icon" id="narrative-toggle-icon">▼</span>
-          Clinical Narrative
-          <span class="phase-status" id="narrative-status" style="margin-left:auto">● Streaming…</span>
-        </button>
-        <div class="narrative-card" id="narrative-card" style="margin-top:8px">
-          <span id="narrative-text"></span><span class="stream-cursor" id="stream-cursor">▌</span>
-        </div>
       </div>
 
     </div><!-- #results -->

@@ -779,6 +779,12 @@ def build_rounds_prompt(
             "Reference this once in the biological narrative — do not repeat it."
         )
 
+    # Creatinine unit guard: apply before the value appears anywhere in the prompt.
+    # Raw creatinine < 20 μmol/L is biologically impossible — almost certainly mg/dL entry.
+    # Convert here so the LLM never sees a sub-20 value and attempts its own (wrong) conversion.
+    creat_raw = float(raw.get("Creatinine", 0) or 0)
+    creat_display = round(creat_raw * 88.4, 1) if 0 < creat_raw < 20 else creat_raw
+
     # Build the 3 worst markers + their clinical context for the prompt
     worst_3 = xai["marker_attributions"][:3]
     worst_str = "\n".join(
@@ -845,6 +851,16 @@ DEVIATION FROM THESE CONSTITUTES A CLINICAL ERROR IN THIS REPORT.
   whose tier is KILL or MODERATE.
 
 {phenotype_constraint}
+
+• BEI zone names: the three zones are VERY_LOW, AT_RISK, and SUFFICIENT — these are the
+  ONLY valid zone names. NEVER use "DEPLETED", "CRITICAL", "MARGINAL", or any invented name.
+  SUFFICIENT zone (BEI ≥0.71) = 14% 90-day mortality; it does NOT mean the patient will
+  deteriorate. If you need to describe risk of decline, say "drop into AT_RISK zone" — never
+  "DEPLETED zone."
+
+• Creatinine: the raw submitted value was {creat_raw}; the system has converted/confirmed
+  this to {creat_display} μmol/L. Use {creat_display} μmol/L in all clinical statements.
+  Do NOT perform your own unit conversion or cite the raw value as a clinical number.
 
 ══════════════════════════════════════════════════════════════
 YOUR TASK — produce EXACTLY these four sections. No preamble. Start with ROUNDS BRIEFING.
