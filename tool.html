@@ -456,24 +456,44 @@ textarea#json-input:focus { border-color: var(--accent); }
 
 /* ── Print styles ── */
 @media print {
-  .topbar, .left-panel, .report-actions, .action-btn { display: none !important; }
-  body { font-size: 12pt; background: #fff; color: #000; }
-  .layout { display: block; }
-  .right-panel { padding: 0; overflow: visible; }
-  #results { display: flex !important; }
-  .score-band { border: 2px solid #ccc !important; background: #f9f9f9 !important; }
-  .score-value { color: #000 !important; }
-  .info-card, .xai-card, .rule-row { border: 1px solid #ccc; break-inside: avoid; }
+  /* Preserve all background colors and gradients */
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
+  /* Hide UI chrome only */
+  .topbar, .left-panel, .report-actions, .action-btn,
+  .narrative-toggle { display: none !important; }
+
+  /* Remove overflow clipping so every section renders fully */
+  html, body { overflow: visible !important; height: auto !important; }
+  body { font-size: 11pt; }
+  .layout { display: block; overflow: visible !important; height: auto !important; }
+  .right-panel { padding: 16px 24px; overflow: visible !important; height: auto !important; }
+
+  /* Ensure results and all subsections show */
+  #results { display: flex !important; flex-direction: column; }
+  #xai-section, #rules-section, #icd-section { display: block !important; }
+
+  /* Page-break hygiene */
+  .info-card, .xai-card, .rule-row { break-inside: avoid; }
+  .section-title { break-after: avoid; }
   .info-grid { grid-template-columns: 1fr 1fr; }
-  .print-header { display: block !important; }
+
+  /* Print header */
+  .print-header { display: flex !important; }
   a { text-decoration: none; color: inherit; }
 }
 .print-header {
   display: none;
-  border-bottom: 2pt solid #000; margin-bottom: 16pt; padding-bottom: 8pt;
+  border-bottom: 2pt solid var(--accent); margin-bottom: 20pt; padding-bottom: 10pt;
+  align-items: center; gap: 12pt;
 }
-.print-header h1 { font-size: 16pt; margin: 0 0 4pt; }
-.print-header p  { font-size: 9pt; color: #555; margin: 0; }
+.print-header-logo {
+  width: 36pt; height: 36pt; background: var(--accent-bg);
+  border-radius: 8pt; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.print-header-text h1 { font-size: 15pt; margin: 0 0 2pt; color: var(--fg); font-weight: 700; }
+.print-header-text p  { font-size: 8.5pt; color: var(--fg-dim); margin: 0; }
 
 /* ── Responsive ── */
 @media (max-width: 860px) {
@@ -596,8 +616,16 @@ textarea#json-input:focus { border-color: var(--accent); }
 
       <!-- Print-only header -->
       <div class="print-header">
-        <h1>SepsisAI BEI Analysis Report</h1>
-        <p id="print-meta"></p>
+        <div class="print-header-logo">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <polyline points="1,10 4,10 5,5 6,15 7,8 8,11 9,10 13,10 14,4 15,16 16,10 19,10"
+              stroke="#0284c7" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="print-header-text">
+          <h1>SepsisAI · BEI Analysis Report</h1>
+          <p id="print-meta"></p>
+        </div>
       </div>
 
       <!-- Report header -->
@@ -1115,7 +1143,7 @@ function renderResults(d, payload) {
   document.getElementById('r-zone-detail').textContent = bei.bei_zone_detail || d.bei_zone_detail || '';
   document.getElementById('r-module').textContent = `Module ${d.module || '?'}`;
   const cov = bei.coverage_pct ?? d.coverage_pct;
-  document.getElementById('r-coverage').textContent = cov != null ? `Coverage: ${(cov*100).toFixed(0)}%` : '';
+  document.getElementById('r-coverage').textContent = cov != null ? `Coverage: ${Number(cov).toFixed(0)}%` : '';
   const tip = bei.tipping_marker || d.tipping_marker;
   document.getElementById('r-tipping').textContent = tip ? `↑ ${tip}` : '';
 
@@ -1131,7 +1159,7 @@ function renderResults(d, payload) {
   // Confidence
   document.getElementById('r-confidence').textContent = d.phenotype_confidence || d.confidence || '—';
   document.getElementById('r-auc').textContent =
-    (d.module === 'A' || d.module === 'a') ? 'AUC 0.812 — Davoudian et al. 2023'
+    (d.module === 'A' || d.module === 'a') ? 'AUC 0.812'
     : (d.module === 'B' ? 'KILL-4 panel — validation pending' : '');
 
   // xAI
