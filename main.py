@@ -132,10 +132,17 @@ import pathlib as _pathlib
 _LANDING_HTML: str = (_pathlib.Path(__file__).parent / "landing.html").read_text(encoding="utf-8")
 
 
-@app.get("/", response_class=HTMLResponse, include_in_schema=False)
-def root() -> HTMLResponse:
-    """Serve the SepsisAI BEI API landing page."""
-    return HTMLResponse(content=_LANDING_HTML)
+@app.get("/", include_in_schema=False)
+def root(request: Request):
+    """Redirect to the protected tool page."""
+    from fastapi.responses import RedirectResponse
+    if _TOOL_PASSWORD and not _check_basic_auth(request):
+        return Response(
+            status_code=401,
+            headers={"WWW-Authenticate": 'Basic realm="SepsisAI Tool"'},
+            content="Unauthorized — please enter your credentials.",
+        )
+    return RedirectResponse(url="/tool")
 
 
 # ── Analysis tool page ────────────────────────────────────────────────────────
